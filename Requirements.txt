@@ -14,4 +14,3 @@ python-multipart>=0.0.7
 
 httpx==0.26.0
 pytest==7.4.4
-pytest
