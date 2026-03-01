@@ -15,7 +15,7 @@ from sqlalchemy import String, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from Password_Vault.backend.models.vault_entry import VaultEntry
-from app.base import Base
+from app.database import Base
 
 
 class User(Base):

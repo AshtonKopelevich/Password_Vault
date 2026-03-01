@@ -18,7 +18,7 @@ from sqlalchemy import String, DateTime, ForeignKey, func
 from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.base import Base
+from app.database import Base
 
 if TYPE_CHECKING:
     from .user import User
