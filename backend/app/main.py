@@ -12,13 +12,13 @@ mock_vault = [
     {"id": 3, "name": "Third Vault", "username": "third_user", "email": "third@third.com", "password": "third_password", "website": "third.com"}
 ]
 
-@app.get("/{frontend_input}")
-def root(frontend_input: str = frontend_input):
+@app.get("/vault/{frontend_input}")
+def root(frontend_input: str):
     for i in range(len(mock_vault)):
         if mock_vault[i]["name"] == frontend_input:
             return mock_vault[i]
     return {"message": "Frontend input not found in vault."}
-
+#http://127.0.0.1:8000/docs on my computer for the link to work
 
 
     #Returns a JSON response with the message "Hello World!"
