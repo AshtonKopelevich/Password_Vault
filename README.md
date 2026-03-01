@@ -10,7 +10,7 @@ This project is a FastAPI-based backend service using PostgreSQL, SQLAlchemy, Al
 
 * Python **3.12.x (64-bit)**
 * Git
-* PostgreSQL (local or remote)
+* SQLite (local or remote)
 
 ---
 
