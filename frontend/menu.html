@@ -11,6 +11,19 @@
         <header></header>
         <section>
             <h1>Login Successful</h1>
+            <form>
+                <br>
+                <label for="application-name">Application Name:</label>
+                <input type="text" id="application-name" name="application">
+                <br>
+                <label for="new-acc-user">Username: </label>
+                <input type="text" id="new-acc-user" name="new-user">
+                <br>
+                <label for="new-acc-password">Password: </label>
+                <input type="password" id="new-acc-password" name="new-password">
+                <br>
+                <button type="submit" onclick="addAccount()">Submit</button>
+            </form>
             <h3>Change Password</h3>
             <form>
                 <label for="new-password">New Password: </label>
@@ -23,7 +36,7 @@
                 <br>
             </form>
             <h3>View Password</h3>
-            <button>View Password</button>
+            <button type="Submut" onClick="displayAccounts()" >View Password</button>
         </section>
         <footer>
             <p>© Passworld Vault 2026</p>
