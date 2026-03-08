@@ -1,6 +1,6 @@
 from models import User, VaultEntry
 
-##USERS FUNCTIONS##
+##USERS FUNCTIONS###
 
 #search user by username, email or id
 def get_user(session, **kwargs):
