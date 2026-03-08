@@ -5,7 +5,7 @@ from query_helper_functions import *
 #creates sqllite file "vault.db"
 Base.metadata.create_all(bind=engine)
 
-#create session
+#create a session
 with get_session() as session:
     bob = add_user(session, email="bob@example.com", username="bob", password="hashedpassword")
     add_vault_entry(session, owner_id=bob.id, account="netfilx", password="secret123")
