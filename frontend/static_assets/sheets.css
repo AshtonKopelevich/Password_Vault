@@ -34,8 +34,16 @@ section {
     margin: 0;
     display: block;
     flex: 1 0 auto;
+    max-width: 1296px;
+    align-self: center;
     background-position: center;
     align-items: center;
+}
+
+form {
+    align-self: center;
+    align-items: center;
+    background-position: center;
 }
 
 p {
