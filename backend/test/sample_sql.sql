@@ -8,30 +8,29 @@ DROP TABLE IF EXISTS vault_entries;
 DROP TABLE IF EXISTS users;
 
 -- Create users table
-DROP TABLE IF EXISTS vault_entries;
-DROP TABLE IF EXISTS users;
-
 CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT UNIQUE NOT NULL,
-    username TEXT NOT NULL,
     hashed_password TEXT NOT NULL,
-    created_at TEXT,
+    created_at TEXT NOT NULL,
     updated_at TEXT
 );
 
---create vault entries--
+-- Create indexes on users
+CREATE INDEX ix_users_id ON users(id);
+CREATE INDEX ix_users_email ON users(email);
+
+-- Create vault_entries table
 CREATE TABLE vault_entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_id INTEGER NOT NULL,
-    account TEXT NOT NULL,
-    hashed_password TEXT NOT NULL,
+    user_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
     encrypted_data BLOB NOT NULL,
     iv BLOB NOT NULL,
     salt BLOB NOT NULL,
-    created_at TEXT,
+    created_at TEXT NOT NULL,
     updated_at TEXT,
-    FOREIGN KEY(owner_id) REFERENCES users(id) ON DELETE CASCADE
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- Create indexes on vault_entries
@@ -50,7 +49,7 @@ INSERT INTO users (email, hashed_password, created_at, updated_at) VALUES
 -- Insert sample vault entries
 -- Note: For SQLite, we use X'hex' notation for BLOB data
 -- This is fake encrypted data (random hex) - won't decrypt to anything meaningful
-INSERT INTO vault_entries (user_id, account, hashed_password, iv, salt, created_at, updated_at) VALUES
+INSERT INTO vault_entries (user_id, title, encrypted_data, iv, salt, created_at, updated_at) VALUES
     -- Alice's entries (user_id = 1)
     (1, 'Netflix', 
      X'8a4f2c1e89b7d3f0a6c2e8f4b1d7a3c9e5f1b8d4a0c6e2f8b4d0a7c3e9f5b1d8',
