@@ -1,6 +1,6 @@
 from app.database import Base, engine, get_session
 from models import User, VaultEntry
-from Password_Vault.backend.query_helper_functions import add_user, add_vault_entry
+from query_helper_functions import add_user, add_vault_entry, get_user, get_all_users
 
 #creates sqllite file "vault.db"
 Base.metadata.create_all(bind=engine)
@@ -14,3 +14,4 @@ with get_session() as session:
     add_vault_entry(session, owner_id=molly.id, account="gmail", password="secret123")
     add_vault_entry(session, owner_id=molly.id, account="spotify", password="password")
 
+    get_user("bob", "bob@example.com")
