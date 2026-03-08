@@ -1,13 +1,38 @@
-from sqlalchemy import Column, Integer, String
+
+from datetime import datetime
+from typing import TYPE_CHECKING
+from typing import List
+
 from app.database import Base
-from sqlalchemy.orm import relationship
+
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import String, DateTime, func
+
+if TYPE_CHECKING:
+    from .vault_entry import VaultEntry
 
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, nullable=False)
-    username = Column(String, nullable=False)
-    master_password = Column(String, nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    username: Mapped[str] = mapped_column(String, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String, nullable=False)
 
-    vault_entries = relationship("VaultEntry", back_populates="owner")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    vault_entries: Mapped[list["VaultEntry"]] = relationship(
+    back_populates="owner",
+    cascade="all, delete-orphan"
+)
+
+
