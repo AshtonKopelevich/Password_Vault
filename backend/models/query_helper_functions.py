@@ -86,13 +86,13 @@ def print_all_users(session):
 ##VAULT ENTRIES FUNCTIONS##
 
 
-def add_vault_entry(session, user_id, account, password):
+def add_vault_entry(session, user_id, account, password, iv=b"test", salt=b"test"):
     entry = VaultEntry(
         user_id=user_id,
         account=account,
         password=password,
-        iv=b"test",
-        salt=b"test"
+        iv=iv,
+        salt=salt
     )
     session.add(entry)
     session.commit()

@@ -1,6 +1,6 @@
 from backend.app.database import Base, engine, SessionLocal
 from backend.models import User, VaultEntry
-from backend.query_helper_functions import add_user, add_vault_entry
+from backend.models.query_helper_functions import add_user, add_vault_entry, get_all_users
 
 #make tables
 Base.metadata.create_all(bind=engine)
@@ -15,6 +15,6 @@ molly = add_user(session, email="molly@example.com", username="molly00", passwor
 add_vault_entry(session, user_id=molly.id, account="gmail", password=b"secret123")
 add_vault_entry(session, user_id=molly.id, account="spotify", password=b"password")
 
-
+print(get_all_users(session))
 #close session
 session.close()
