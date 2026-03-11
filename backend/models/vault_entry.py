@@ -15,10 +15,10 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import String, DateTime, ForeignKey, func
-from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import LargeBinary
 
-from app.database import Base
+from backend.app.database import Base
 
 if TYPE_CHECKING:
     from .user import User
@@ -41,26 +41,26 @@ class VaultEntry(Base):
     )
 
     # Unencrypted title (e.g., "Netflix", "Gmail")
-    title: Mapped[str] = mapped_column(
+    account: Mapped[str] = mapped_column(
         String(255),
         nullable=False
     )
 
     # AES-GCM encrypted JSON blob (ciphertext + auth tag)
-    encrypted_data: Mapped[bytes] = mapped_column(
-        BYTEA,
+    password: Mapped[bytes] = mapped_column(
+        LargeBinary,
         nullable=False
     )
 
     # Initialization vector (12 bytes recommended for GCM)
     iv: Mapped[bytes] = mapped_column(
-        BYTEA,
+        LargeBinary,
         nullable=False
     )
 
     # PBKDF2 salt (16–32 bytes recommended)
     salt: Mapped[bytes] = mapped_column(
-        BYTEA,
+        LargeBinary,
         nullable=False
     )
 

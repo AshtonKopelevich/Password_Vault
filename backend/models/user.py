@@ -14,8 +14,8 @@ from typing import List
 from sqlalchemy import String, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from Password_Vault.backend.models.vault_entry import VaultEntry
-from app.database import Base
+from backend.models.vault_entry import VaultEntry
+from backend.app.database import Base
 
 
 class User(Base):
@@ -35,8 +35,15 @@ class User(Base):
         nullable=False
     )
 
+    username: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
+        index=True,
+        nullable=False
+    )
+
     # Bcrypt hash of account password
-    hashed_password: Mapped[str] = mapped_column(
+    password: Mapped[str] = mapped_column(
         String(255),
         nullable=False
     )

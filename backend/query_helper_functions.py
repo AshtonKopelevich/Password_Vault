@@ -1,4 +1,4 @@
-from models import User, VaultEntry
+from backend.models import User, VaultEntry
 
 ##USERS FUNCTIONS##
 
@@ -9,15 +9,20 @@ def get_user(session, **kwargs):
 
 #add user
 def add_user(session, email, username, password):
-    if get_user(session, username=username):
+    existing = get_user(session, username=username)
+    if existing:
         print(f"User '{username}' already exists.")
-        return None
-    if get_user(session, email=email):
+        return existing
+
+    existing = get_user(session, email=email)
+    if existing:
         print(f"User with email '{email}' already exists.")
-        return None
-    user = User(email=email, username=username, hashed_password=password)
+        return existing
+
+    user = User(email=email, username=username, password=password)
     session.add(user)
     session.commit()
+    session.refresh(user)   # ensures user.id is available
     return user
 
 #prints vault entries for one user; pass username, email, or id as identifier
@@ -81,12 +86,11 @@ def print_all_users(session):
 ##VAULT ENTRIES FUNCTIONS##
 
 
-def add_vault_entry(session, owner_id, account, password):
+def add_vault_entry(session, user_id, account, password):
     entry = VaultEntry(
-        owner_id=owner_id,
+        user_id=user_id,
         account=account,
         password=password,
-        encrypted_data=b"test",
         iv=b"test",
         salt=b"test"
     )
@@ -95,12 +99,12 @@ def add_vault_entry(session, owner_id, account, password):
     return entry
 
 
-def get_vault_entries(session, owner_id=None, user=None):
+def get_vault_entries(session, user_id=None, user=None):
     if user:
-        owner_id = user.id
-    if owner_id is None:
+        user_id = user.id
+    if user_id is None:
         return session.query(VaultEntry).all()
-    return session.query(VaultEntry).filter_by(owner_id=owner_id).all()
+    return session.query(VaultEntry).filter_by(user_id=user_id).all()
 
 def update_vault_entry(session, entry, **kwargs):
     for key, value in kwargs.items():

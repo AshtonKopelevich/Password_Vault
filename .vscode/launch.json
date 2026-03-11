@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Current File (project root)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/Password_Vault"
+      },
+      "windows": {
+        "env": {
+          "PYTHONPATH": "${workspaceFolder};${workspaceFolder}\\Password_Vault"
+        }
+      }
+    }
+  ]
+}
