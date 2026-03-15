@@ -1,4 +1,4 @@
-from models import User, VaultEntry
+from backend.models import User, VaultEntry
 
 ##USERS FUNCTIONS##
 

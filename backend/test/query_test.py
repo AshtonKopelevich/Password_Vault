@@ -1,6 +1,9 @@
-from app.database import Base, engine, get_session
-from models import User, VaultEntry
-from Password_Vault.backend.query_helper_functions import add_user, add_vault_entry
+from backend.app.test import Base, engine, get_session
+from backend.models.user import User
+from backend.models.vault_entry import VaultEntry
+
+
+from backend.query_helper_functions import add_user, add_vault_entry
 
 #make tables
 Base.metadata.create_all(bind=engine)

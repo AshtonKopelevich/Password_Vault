@@ -10,10 +10,11 @@ DROP TABLE IF EXISTS users;
 -- Create users table
 CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
     email TEXT UNIQUE NOT NULL,
     hashed_password TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create indexes on users
@@ -28,7 +29,7 @@ CREATE TABLE vault_entries (
     encrypted_data BLOB NOT NULL,
     iv BLOB NOT NULL,
     salt BLOB NOT NULL,
-    created_at TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT,
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
@@ -41,10 +42,10 @@ CREATE INDEX ix_vault_entries_user_id ON vault_entries(user_id);
 -- Insert sample users
 -- Note: These are bcrypt hashes of "password123"
 -- All timestamps are ISO 8601 format
-INSERT INTO users (email, hashed_password, created_at, updated_at) VALUES
-    ('alice@example.com', '$2b$12$KIXn4mGQvzN8eT5PqH7k8.LZx9cP3vY1dR2fE8tG7hS6jK9lM0nO4', '2024-02-22T10:30:00.000Z', '2024-02-22T10:30:00.000Z'),
-    ('bob@example.com', '$2b$12$9mHx2pLQk4N7fE6RsM8j3.WXyZ1aB5cD9fG3hI7jK2lM6nO8pQ4rS', '2024-02-23T14:15:00.000Z', '2024-02-23T14:15:00.000Z'),
-    ('charlie@example.com', '$2b$12$3nIx5oMRp9L3gF7StN9k4.YZa2bC6dE0fH4iJ8kL3mN7oP9qR5sT', '2024-02-24T09:00:00.000Z', '2024-02-24T09:00:00.000Z');
+INSERT INTO users (username, email, hashed_password, created_at, updated_at) VALUES
+    ('alice', 'alice@example.com', '$2b$12$KIXn4mGQvzN8eT5PqH7k8.LZx9cP3vY1dR2fE8tG7hS6jK9lM0nO4', '2024-02-22T10:30:00.000Z', '2024-02-22T10:30:00.000Z'),
+    ('bob', 'bob@example.com', '$2b$12$9mHx2pLQk4N7fE6RsM8j3.WXyZ1aB5cD9fG3hI7jK2lM6nO8pQ4rS', '2024-02-23T14:15:00.000Z', '2024-02-23T14:15:00.000Z'),
+    ('charlie', 'charlie@example.com', '$2b$12$3nIx5oMRp9L3gF7StN9k4.YZa2bC6dE0fH4iJ8kL3mN7oP9qR5sT', '2024-02-24T09:00:00.000Z', '2024-02-24T09:00:00.000Z');
 
 -- Insert sample vault entries
 -- Note: For SQLite, we use X'hex' notation for BLOB data

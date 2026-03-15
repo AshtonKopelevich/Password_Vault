@@ -3,7 +3,9 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from typing import List
 
-from app.database import Base
+from backend.app.database import Base
+#from backend.app.test import Base
+
 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import String, DateTime, func
