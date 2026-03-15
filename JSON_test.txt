@@ -1,0 +1,10 @@
+{
+  "id": 1,
+  "user_id": 1,
+  "title": "Netflix",
+  "encrypted_data": "abc123",
+  "iv": "random_iv",
+  "salt": "random_salt",
+  "created_at": "2024-02-22",
+  "updated_at": null
+}
