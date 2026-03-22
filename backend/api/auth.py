@@ -28,17 +28,17 @@ class User(BaseModel):
 
 
 class VaultEntry(BaseModel):
-    encrypted_data: bytes
+    password: bytes
     iv: bytes
     salt: bytes
-    title: str
+    account: str
 
 class VaultEntryResponse(VaultEntry):
     id: int
     user_id: int
 
     # This is the "magic" that fixes the JSON error
-    @field_serializer('encrypted_data', 'iv', 'salt')
+    @field_serializer('password', 'iv', 'salt')
     def serialize_bytes(self, data: bytes):
         return base64.b64encode(data).decode('utf-8')
     
@@ -69,7 +69,7 @@ def create_user(user_data: User, db: Session = Depends(get_db)):
     new_user = DBUser(
         email=user_data.email,
         username=user_data.username,
-        hashed_password=user_data.hashed_password # This should be hashed in production!
+        password=user_data.hashed_password # This should be hashed in production!
     )
 
     db.add(new_user)
@@ -81,7 +81,7 @@ def create_user(user_data: User, db: Session = Depends(get_db)):
 @app.post("/auth/login") # login
 def verify_user(user: User, db: Session = Depends(get_db)):
     user_temp = db.query(DBUser).filter(DBUser.email == user.email).first()
-    if not user_temp or user.hashed_password != user_temp.hashed_password:
+    if not user_temp or user.hashed_password != user_temp.password:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     return {"message": "Login successful", "token": "fake-jwt-token-for-now"} # idk maybe need to fix
@@ -103,7 +103,7 @@ def grab_vault(user_id_v2: int, db: Session = Depends(get_db)):
 def new_entry(user_id_v2: int, entry: VaultEntry, db: Session = Depends(get_db)):
 
     # check if user already exists by comparing id
-    user_temp = db.query(DBVaultEntry).filter(DBVaultEntry.user_id == user_id_v2).first()
+    user_temp = db.query(DBUser).filter(DBUser.id == user_id_v2).first()
 
     if not user_temp:
         raise HTTPException(
@@ -113,8 +113,8 @@ def new_entry(user_id_v2: int, entry: VaultEntry, db: Session = Depends(get_db))
     
     db_entry = DBVaultEntry(
         user_id=user_id_v2,
-        title=entry.title,
-        encrypted_data=entry.encrypted_data,
+        account=entry.account,
+        password=entry.password,
         iv=entry.iv,
         salt=entry.salt
     )
@@ -138,8 +138,8 @@ def update_entry(entry_id: int, updated_data: VaultEntry, db: Session = Depends(
     if not db_entry:
         raise HTTPException(status_code=404, detail="Entry not found")
     
-    db_entry.title = updated_data.title
-    db_entry.encrypted_data = updated_data.encrypted_data
+    db_entry.account = updated_data.account
+    db_entry.password = updated_data.password
     db_entry.iv = updated_data.iv
     db_entry.salt = updated_data.salt
     db.commit()

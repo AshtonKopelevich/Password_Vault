@@ -14,10 +14,14 @@ from typing import List
 from sqlalchemy import String, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from backend.models.vault_entry import VaultEntry
+#from backend.models.vault_entry import VaultEntry
 from backend.app.database import Base
 
-
+from typing import List, TYPE_CHECKING
+if TYPE_CHECKING:
+    from .vault_entry import VaultEntry # This prevents the crash
+    
+    
 class User(Base):
     __tablename__ = "users"
 
