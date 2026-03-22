@@ -24,6 +24,10 @@ body {
     background-color: #d8dbe6;
     height: 100%;
 }
+button {
+    font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+
+}
 footer {
     padding-bottom: 30px;
     background-color: #171822;
@@ -44,6 +48,7 @@ form {
     align-self: center;
     align-items: center;
     background-position: center;
+    font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
 }
 
 p {
