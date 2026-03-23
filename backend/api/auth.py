@@ -59,7 +59,8 @@ def index():
 
 
 # Auth API
-@app.post("/auth/signup") # register
+# register
+@app.post("/auth/signup") 
 def create_user(user_data: User, db: Session = Depends(get_db)):
     # check if user already exists
     existing_user = db.query(DBUser).filter(DBUser.email == user_data.email).first()
@@ -77,8 +78,8 @@ def create_user(user_data: User, db: Session = Depends(get_db)):
     db.refresh(new_user)
     return {"message": "User created", "user_id": new_user.id}
 
-
-@app.post("/auth/login") # login
+# login
+@app.post("/auth/login") 
 def verify_user(user: User, db: Session = Depends(get_db)):
     user_temp = db.query(DBUser).filter(DBUser.email == user.email).first()
     if not user_temp or user.hashed_password != user_temp.password:
@@ -88,6 +89,7 @@ def verify_user(user: User, db: Session = Depends(get_db)):
 
 
 # Vault API
+# grabs the vault_entry for that specific user
 @app.get("/vault/{user_id_v2}", response_model=List[VaultEntryResponse])
 def grab_vault(user_id_v2: int, db: Session = Depends(get_db)):
 
@@ -98,7 +100,7 @@ def grab_vault(user_id_v2: int, db: Session = Depends(get_db)):
     
     return user_temp
 
-# adds new entry encrypted data
+# Adds vault_entry row for the specific user
 @app.post("/vault/{user_id_v2}", response_model=VaultEntryResponse)
 def new_entry(user_id_v2: int, entry: VaultEntry, db: Session = Depends(get_db)):
 
@@ -124,7 +126,7 @@ def new_entry(user_id_v2: int, entry: VaultEntry, db: Session = Depends(get_db))
     return db_entry
     
 
-# updates encrypted data + metadata
+# grabs the vault_entry id
 @app.get("/vault/entry/{entry_id}", response_model=VaultEntryResponse)
 def get_entry(entry_id: int, db: Session = Depends(get_db)):
     entry = db.query(DBVaultEntry).filter(DBVaultEntry.id == entry_id).first()
@@ -132,6 +134,7 @@ def get_entry(entry_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Entry not found")
     return entry
 
+# updates the vault_entry id
 @app.put("/vault/entry/{entry_id}", response_model=VaultEntryResponse)
 def update_entry(entry_id: int, updated_data: VaultEntry, db: Session = Depends(get_db)):
     db_entry = db.query(DBVaultEntry).filter(DBVaultEntry.id == entry_id).first()
@@ -146,6 +149,7 @@ def update_entry(entry_id: int, updated_data: VaultEntry, db: Session = Depends(
     db.refresh(db_entry)
     return db_entry
 
+# Deletes the vault_entry id
 @app.delete("/vault/entry/{entry_id}")
 def delete_entry(entry_id: int, db: Session = Depends(get_db)):
     db_entry = db.query(DBVaultEntry).filter(DBVaultEntry.id == entry_id).first()
