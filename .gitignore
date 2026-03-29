@@ -217,4 +217,6 @@ __pycache__/
 # Environment / Secrets
 .env
 
-
+# Removed directories due to running on JetBrains IDEs
+Password_Vault_Frontend/node_modules
+.idea
