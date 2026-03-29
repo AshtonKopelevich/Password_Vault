@@ -19,10 +19,11 @@ body {
     font-size: 18px;
     margin: 0;
     padding: 0;
-    display: flex;
-    flex-direction: column;
     background-color: #d8dbe6;
-    height: 100%;
+}
+button {
+    font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+
 }
 footer {
     padding-bottom: 30px;
@@ -32,18 +33,24 @@ footer {
 }
 section {
     margin: 0;
-    display: block;
     flex: 1 0 auto;
     max-width: 1296px;
-    align-self: center;
-    background-position: center;
+    display: flex;
+    flex-direction: column;
     align-items: center;
+    align-self: center;
+    min-height: 90vh;
 }
 
 form {
     align-self: center;
     align-items: center;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    max-width: 1296px;
     background-position: center;
+    font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
 }
 
 p {
