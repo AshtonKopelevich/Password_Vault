@@ -30,53 +30,68 @@ function UserMenu() {
         *       The third digit is there is at least 1 numerical character
         *       The last digit is the password is at least 8 character long
         * */
-        let err_num = 0b0000;
+        let err_num = 0b10000;
         if (password.length >= 8) {
-            err_num |= 0b0001;
+            err_num |= 0b00001;
         }
+        let specCharFound = false;
         for (let i = 0; i < password.length; i++) {
             let c = password.charCodeAt(i);
             if (47 < c && c < 58) {
-                err_num |= 0b0010;
+                err_num |= 0b00010;
             }
             if (64 < c && c < 91) {
-                err_num |= 0b0100;
+                err_num |= 0b00100;
             }
             if ((32 < c && c < 48) || (57 < c && c < 65) || (90 < c && c < 97) || (122 < c && c < 127)) {
-                err_num |= 0b1000;
+                err_num |= 0b01000;
             }
+            if (c <= 32 || c > 127) {
+                specCharFound = true;
+            }
+        }
+        if (specCharFound) {
+            err_num &= 0b01111;
         }
         return err_num; // the return is in bitwise which helps with determining error type for a program
         // as a boolean statement:
-        // if err_num == 0b1111
+        // if err_num == 0b11111
         //      there are no errors
         // else
         //      there are errors
     }
 
     function passwordFormatMsg() {
-        let msg = "";
+        let msgs = [];
         const err_num = passwordFormatErr();
-        if ((err_num & 0b0001) == 0) {
-            msg += "Password has to be at least 8 characters long.\n";
+        if ((err_num & 0b00001) == 0) {
+            msgs.push("Password has to be at least 8 characters long.");
         }
-        if ((err_num & 0b0010) == 0) {
-            msg += "Password has to contain at least 1 numerical character [0-9].\n";
+        if ((err_num & 0b00010) == 0) {
+            msgs.push("Password has to contain at least 1 numerical character [0-9].");
         }
-        if ((err_num & 0b0100) == 0) {
-            msg += "Password has to contain at least 1 uppercase character [A-Z].\n";
+        if ((err_num & 0b00100) == 0) {
+            msgs.push("Password has to contain at least 1 uppercase character [A-Z].");
         }
-        if ((err_num & 0b1000) == 0) {
-            msg += "Password has to contain at least 1 special character (&%*^ etc.).\n"
+        if ((err_num & 0b01000) == 0) {
+            msgs.push("Password has to contain at least 1 special character (&%*^ etc.).");
         }
-
-        return msg;
+        if ((err_num & 0b10000) == 0) {
+            msgs.push("Password contains an invalid character");
+        }
+        return msgs.map((msg, i) => {
+            return (
+                <li key={i}>
+                    {msg}
+                </li>
+            );
+        });
     }
 
     function newUserSubmit(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault();
 
-        const bool = e.isDefaultPrevented() && passwordFormatErr() == 0b1111;
+        const bool = e.isDefaultPrevented() && passwordFormatErr() == 0b11111;
 
         if (bool) {
             // todo
@@ -106,10 +121,10 @@ function UserMenu() {
 
     let password_elem = "";
     function showPassword() {
-        const bool = true;
+        const bool = true; // this boolean checks whether the API call is at all possible.
         // for some odd reason this does not work, this will need to be fixed in the future.
         if (bool) {
-            password_elem = "TBA"; // todo, connect this to fast API
+            navigate("/PasswordList");
         } else {
             password_elem = "Password cannot be retrieved at the moment, please try again later";
         }
@@ -150,6 +165,7 @@ function UserMenu() {
                     />
                     <br></br>
                     <p>{passwordFormatMsg()}</p>
+                    {/*The code above probably needs a different method, or we implement inputs*/}
 
                     <button type="submit">Submit</button>
                 </form>
@@ -176,7 +192,7 @@ function UserMenu() {
                         onChange={(e) => setPassword2(e.target.value)}
                     />
                     <br></br>
-                    <p>{passwordFormatMsg()}</p>
+                    <ul>{passwordFormatMsg()}</ul>
                     <p>{passwordMatchMsg()}</p>
 
                     <button type="submit">Submit</button>
@@ -186,7 +202,7 @@ function UserMenu() {
                 <h3>View Passwords</h3>
 
                 <br></br>
-                <button type="button" onSubmit={showPassword}>View Password</button>
+                <button type="button" onClick={showPassword}>View Passwords</button>
                 <p>{password_elem}</p>
             </section>
 

@@ -2,13 +2,12 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "./sheets.css";
 
+
 export default function LoginPage() {
-    // Bowen's Note: I am going to assume that these variables are to be sent to the backend for evaluation
-    //               As such, I will create my own variables for the UserMenu file that redefines what these
-    //               variables will evaluate to.
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const navigate = useNavigate();
+    const [errMsg, setErrMsg] = useState("");
 
     function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault();
@@ -16,11 +15,14 @@ export default function LoginPage() {
         const bool = e.isDefaultPrevented();
 
         if (bool) {
-            navigate("/UserMenu"); // Given the way I made my code work in the other file, I think there needs to be some way to allow this to not continue if the backend does not recognize the session.
-            // I will assume that this is where the connection to fast API happens
+            navigate("/UserMenu");
+            // Exception code if a connection cannot be made for fast API:
+            // setErrMsg("There was an error on login");
+            // Exception code if the password or username cannot be found in the database:
+            // setErrMsg("Incorrect or invalid username or password");
         } else {
             // show error message
-            console.log("Unable to handle submit")
+            setErrMsg("Unable to handle password request");
         }
     }
 
@@ -54,6 +56,7 @@ export default function LoginPage() {
                     <br></br>
                     <button type="submit">Submit</button>
                 </form>
+                <p>{errMsg}</p>
             </section>
 
             <footer>
