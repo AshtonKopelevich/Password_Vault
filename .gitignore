@@ -206,9 +206,15 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-#Different decorator types:
-@app.get("/")        # retrieve data
-@app.post("/")       # create data
-@app.put("/")        # update data
-@app.delete("/")     # delete data
+# Database
+*.db
+
+# Python 
+.venv/
+__pycache__/
+*.pyc
+
+# Environment / Secrets
+.env
+
 
