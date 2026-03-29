@@ -17,5 +17,4 @@ add_vault_entry(session, user_id=molly.id, account="spotify", password=b"passwor
 
 print(get_all_users(session))
 #close session
-
 session.close()
