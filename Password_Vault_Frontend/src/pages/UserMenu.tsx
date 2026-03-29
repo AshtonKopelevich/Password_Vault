@@ -130,6 +130,10 @@ function UserMenu() {
         }
     }
 
+    function logout() {
+        navigate("/");
+    }
+
     return (
         <div>
             <header></header>
@@ -204,6 +208,10 @@ function UserMenu() {
                 <br></br>
                 <button type="button" onClick={showPassword}>View Passwords</button>
                 <p>{password_elem}</p>
+                {/*The thing above could be a way to display error messages instead*/}
+
+                <h3>Logout</h3>
+                <button type="button" onClick={logout}>Logout</button>
             </section>
 
             <footer>
