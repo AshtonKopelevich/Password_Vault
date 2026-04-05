@@ -11,6 +11,9 @@ import base64
 from pydantic import field_serializer
 from backend.models.user import User as DBUser
 from backend.models.vault_entry import VaultEntry as DBVaultEntry
+from passlib.context import CryptContext
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 Base.metadata.create_all(bind=engine)
 
@@ -60,32 +63,35 @@ def index():
 
 # Auth API
 # register
-@app.post("/auth/signup") 
+@app.post("/auth/signup")
 def create_user(user_data: User, db: Session = Depends(get_db)):
-    # check if user already exists
     existing_user = db.query(DBUser).filter(DBUser.email == user_data.email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
-    
+
+    # ✅ Hash before storing — never store plaintext
+    hashed = pwd_context.hash(user_data.hashed_password)
+
     new_user = DBUser(
         email=user_data.email,
         username=user_data.username,
-        password=user_data.hashed_password # This should be hashed in production!
+        password=hashed  # storing the bcrypt hash
     )
-
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
     return {"message": "User created", "user_id": new_user.id}
 
 # login
-@app.post("/auth/login") 
+@app.post("/auth/login")
 def verify_user(user: User, db: Session = Depends(get_db)):
     user_temp = db.query(DBUser).filter(DBUser.email == user.email).first()
-    if not user_temp or user.hashed_password != user_temp.password:
+
+    # ✅ verify() handles the comparison securely — never compare directly
+    if not user_temp or not pwd_context.verify(user.hashed_password, user_temp.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    return {"message": "Login successful", "token": "fake-jwt-token-for-now"} # idk maybe need to fix
+
+    return {"message": "Login successful", "token": "fake-jwt-token-for-now"}
 
 
 # Vault API

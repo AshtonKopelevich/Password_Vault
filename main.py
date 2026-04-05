@@ -1,6 +1,8 @@
-def main():
-    print("Hello from password-vault!")
+from fastapi import FastAPI
 
+# This is the "app" that Uvicorn is looking for!
+app = FastAPI()
 
-if __name__ == "__main__":
-    main()
+@app.get("/")
+def read_root():
+    return {"message": "The server is working!"}
