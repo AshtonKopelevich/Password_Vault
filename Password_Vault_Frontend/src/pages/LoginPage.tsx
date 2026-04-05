@@ -13,7 +13,12 @@ export default function LoginPage() {
         e.preventDefault();
 
         const bool = e.isDefaultPrevented();
-
+        // User types sensative data
+        // Derive authKey & encryptionKey (derived from the PBKDF2 API)
+        // Send (hashed) authkKey to backend (not encryptionKey)
+        // Backend returns JNT
+        // use encryptionKey locally to decrypt vault data received from backend.
+        // problem with localStorage: easy to access by 3rd parties
         if (bool) {
             navigate("/UserMenu");
             // Exception code if a connection cannot be made for fast API:
