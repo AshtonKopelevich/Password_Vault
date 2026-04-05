@@ -96,15 +96,12 @@ def verify_user(user: User, db: Session = Depends(get_db)):
 
 # Vault API
 # grabs the vault_entry for that specific user
-@app.get("/vault/{user_id_v2}", response_model=List[VaultEntryResponse])
-def grab_vault(user_id_v2: int, db: Session = Depends(get_db)):
-
-    user_temp = db.query(DBVaultEntry).filter(DBVaultEntry.user_id == user_id_v2).all()
-
-    if not user_temp:
-        return []
-    
-    return user_temp
+@app.post("/vault")
+def new_entry(entry: VaultEntry, db: Session = Depends(get_db), 
+              session: str = Cookie(None)):
+    user_id = verify_session_token(session)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid session")
 
 # Adds vault_entry row for the specific user
 @app.post("/vault/{user_id_v2}", response_model=VaultEntryResponse)

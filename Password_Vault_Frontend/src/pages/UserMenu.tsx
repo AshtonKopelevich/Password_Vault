@@ -1,6 +1,36 @@
-import React, {useState} from "react";
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import "./sheets.css";
-import {useNavigate} from "react-router-dom";
+
+// Convert ArrayBuffer to Base64 for sending over JSON
+function bufferToBase64(buffer: ArrayBuffer): string {
+    return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+}
+
+// Convert Base64 back to ArrayBuffer for decryption
+function base64ToBuffer(b64: string): ArrayBuffer {
+    return Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer;
+}
+
+// Encrypts a plaintext password using the encryptionKey from sessionStorage
+async function encryptPassword(plaintext: string, encryptionKeyHex: string) {
+    const keyBytes = Uint8Array.from(
+        encryptionKeyHex.match(/.{2}/g)!.map(b => parseInt(b, 16))
+    );
+    const key = await crypto.subtle.importKey(
+        "raw", keyBytes, { name: "AES-GCM" }, false, ["encrypt"]
+    );
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ciphertext = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv },
+        key,
+        new TextEncoder().encode(plaintext)
+    );
+    return {
+        password: bufferToBase64(ciphertext),
+        iv: bufferToBase64(iv.buffer)
+    };
+}
 
 function UserMenu() {
     // The log-in process //
@@ -73,21 +103,44 @@ function UserMenu() {
         return msg;
     }
 
-    function newUserSubmit(e: React.FormEvent<HTMLFormElement>) {
-        e.preventDefault();
+    async function newUserSubmit(e: React.FormEvent) {
+    e.preventDefault();
 
-        const bool = e.isDefaultPrevented() && passwordFormatErr() == 0b1111;
-
-        if (bool) {
-            // todo
-            // pseudocode:
-            // backend.username = username
-            // backend.password = password
-        } else {
-            // show error message
-            console.log("Invalid password") // this should cuz the website to go up or something or highlight the button
-        }
+    // Pull encryptionKey from session — if missing, session expired
+    const encryptionKey = sessionStorage.getItem("encryptionKey");
+    if (!encryptionKey) {
+        navigate("/");  // boot back to login
+        return;
     }
+
+    if (passwordFormatErr() !== 0b1111) {
+        console.log("Invalid password format");
+        return;
+    }
+
+    try {
+        // ✅ Encrypt before anything leaves the browser
+        const { password: encryptedPassword, iv } = await encryptPassword(password, encryptionKey);
+
+        // ✅ Send encrypted bytes to backend, not plaintext to localStorage
+        const response = await fetch("/vault", {
+            method: "POST",
+            credentials: "include",  // cookie is sent automatically
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ account: username, password: encryptedPassword, iv, salt: "" })
+        });
+
+        if (!response.ok) {
+            console.log("Failed to save entry");
+            return;
+        }
+
+        console.log("Entry saved successfully");
+
+    } catch (err) {
+        console.log("Encryption or network error");
+    }
+}
 
     function changePasswordSubmit(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault();
@@ -114,6 +167,15 @@ function UserMenu() {
             password_elem = "Password cannot be retrieved at the moment, please try again later";
         }
     }
+
+        function handleLogout() {
+        sessionStorage.removeItem("encryptionKey");
+        sessionStorage.removeItem("userId");
+        navigate("/");
+    }
+
+// Add a logout button to the JSX
+<button type="button" onClick={handleLogout}>Logout</button>
 
     return (
         <div>
@@ -196,5 +258,6 @@ function UserMenu() {
         </div>
     );
 }
+
 
 export default UserMenu;
