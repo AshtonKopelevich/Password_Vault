@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Path, HTTPException, status, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -17,6 +18,19 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI()
 #source .venv/bin/activate    
 #fastapi dev backend/api/auth.py  in password_vault folder
+
+# Code to integrate the frontend to the backend
+origins = [
+    "http://localhost:3000"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # trying to test using sample_sql let's see how it behaves and if it even behaves correctly
 # only works if the table is already created using sample_sql.db
