@@ -16,7 +16,8 @@ import os
 
 from fastapi.responses import JSONResponse
 
-app = FastAPI()
+from fastapi import APIRouter
+router = APIRouter()
 
 
 def hash_auth_key(auth_key: str) -> str:
@@ -116,13 +117,13 @@ class VaultEntryResponse(VaultEntry):
 Base.metadata.create_all(bind=engine)
 
 
-@app.get("/")
+@router.get("/")
 def index():
     return {"Name": "First Data"}
 
 
 
-@app.post("/auth/signup")
+@router.post("/auth/signup")
 def create_user(user_data: User, db: Session = Depends(get_db)):
     existing_user = db.query(DBUser).filter(DBUser.email == user_data.email).first()
     if existing_user:
@@ -142,7 +143,7 @@ def create_user(user_data: User, db: Session = Depends(get_db)):
 
     return {"message": "User created", "user_id": new_user.id}
 
-@app.post("/auth/login")
+@router.post("/auth/login")
 def verify_user(user: User, db: Session = Depends(get_db)):
     user_temp = db.query(DBUser).filter(DBUser.email == user.email).first()
 
@@ -160,14 +161,14 @@ def verify_user(user: User, db: Session = Depends(get_db)):
 
     return response
 
-@app.get("/vault", response_model=List[VaultEntryResponse])
+@router.get("/vault", response_model=List[VaultEntryResponse])
 def grab_vault(
     user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     return db.query(DBVaultEntry).filter(DBVaultEntry.user_id == user_id).all()
 
-@app.post("/vault", response_model=VaultEntryResponse)
+@router.post("/vault", response_model=VaultEntryResponse)
 def new_entry(
     entry: VaultEntry,
     user_id: int = Depends(get_current_user),
@@ -187,7 +188,7 @@ def new_entry(
 
     return db_entry
 
-@app.get("/vault/entry/{entry_id}", response_model=VaultEntryResponse)
+@router.get("/vault/entry/{entry_id}", response_model=VaultEntryResponse)
 def get_entry(
     entry_id: int,
     user_id: int = Depends(get_current_user),
@@ -203,7 +204,7 @@ def get_entry(
 
     return entry
 
-@app.put("/vault/entry/{entry_id}", response_model=VaultEntryResponse)
+@router.put("/vault/entry/{entry_id}", response_model=VaultEntryResponse)
 def update_entry(
     entry_id: int,
     updated_data: VaultEntry,
@@ -228,7 +229,7 @@ def update_entry(
 
     return db_entry
 
-@app.delete("/vault/entry/{entry_id}")
+@router.delete("/vault/entry/{entry_id}")
 def delete_entry(
     entry_id: int,
     user_id: int = Depends(get_current_user),
