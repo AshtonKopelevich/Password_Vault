@@ -1,18 +1,27 @@
-from fastapi import FastAPI, Path, HTTPException, status, Depends
-from typing import Optional
-from pydantic import BaseModel
+from fastapi import FastAPI, Path, HTTPException, status, Depends, Request
+from typing import Optional, List
+from pydantic import BaseModel, field_serializer
 from sqlalchemy.orm import Session
-from typing import List, Optional
 
-#from backend.app.test import get_session, engine, Base
 from backend.app.database import get_session, engine, Base
-
-import base64
-from pydantic import field_serializer
 from backend.models.user import User as DBUser
 from backend.models.vault_entry import VaultEntry as DBVaultEntry
 
 import bcrypt
+import hmac
+import hashlib
+import time
+import base64
+import os
+
+from fastapi.responses import JSONResponse
+
+# ✅ CREATE APP FIRST (FIXED)
+app = FastAPI()
+
+# =========================
+# 🔐 CRYPTO HELPERS
+# =========================
 
 def hash_auth_key(auth_key: str) -> str:
     return bcrypt.hashpw(auth_key.encode(), bcrypt.gensalt()).decode()
@@ -20,20 +29,80 @@ def hash_auth_key(auth_key: str) -> str:
 def verify_auth_key(auth_key: str, hashed: str) -> bool:
     return bcrypt.checkpw(auth_key.encode(), hashed.encode())
 
-Base.metadata.create_all(bind=engine)
+SESSION_SECRET = os.getenv("SESSION_SECRET", "dev-secret")
 
-app = FastAPI()
-#source .venv/bin/activate    
-#fastapi dev backend/api/auth.py  in password_vault folder
+def create_session_token(user_id: int):
+    payload = f"{user_id}:{int(time.time()) + 3600}"
+    encoded = base64.b64encode(payload.encode()).decode()
 
-# trying to test using sample_sql let's see how it behaves and if it even behaves correctly
-# only works if the table is already created using sample_sql.db
+    signature = hmac.new(
+        SESSION_SECRET.encode(),
+        encoded.encode(),
+        hashlib.sha256
+    ).hexdigest()
+
+    return f"{encoded}.{signature}"
+
+def verify_session_token(token: str):
+    try:
+        encoded, signature = token.split(".")
+
+        expected_sig = hmac.new(
+            SESSION_SECRET.encode(),
+            encoded.encode(),
+            hashlib.sha256
+        ).hexdigest()
+
+        if not hmac.compare_digest(signature, expected_sig):
+            return None
+
+        payload = base64.b64decode(encoded).decode()
+        user_id, expiry = payload.split(":")
+
+        if int(expiry) < time.time():
+            return None
+
+        return int(user_id)
+
+    except:
+        return None
+
+# =========================
+# 📦 DATABASE DEPENDENCY
+# =========================
+
+def get_db():
+    db = get_session()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# =========================
+# 🔐 AUTH DEPENDENCY
+# =========================
+
+def get_current_user(request: Request):
+    token = request.cookies.get("session")
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    user_id = verify_session_token(token)
+
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid session")
+
+    return user_id
+
+# =========================
+# 📄 MODELS
+# =========================
 
 class User(BaseModel):
-    email: str # who is this
+    email: str
     username: str
-    hashed_password: str # encrypted master password
-
+    hashed_password: str  # actually authKey from frontend
 
 class VaultEntry(BaseModel):
     password: bytes
@@ -45,30 +114,32 @@ class VaultEntryResponse(VaultEntry):
     id: int
     user_id: int
 
-    # This is the "magic" that fixes the JSON error
     @field_serializer('password', 'iv', 'salt')
     def serialize_bytes(self, data: bytes):
         return base64.b64encode(data).decode('utf-8')
-    
+
     class Config:
         from_attributes = True
 
-def get_db():
-    db=get_session()
-    try:
-        yield db
-    finally:
-        db.close()
+# =========================
+# 🧱 CREATE TABLES
+# =========================
 
-# testing (not in use)
+Base.metadata.create_all(bind=engine)
+
+# =========================
+# 🧪 TEST ROUTE
+# =========================
+
 @app.get("/")
 def index():
-    return {"Name" : "First Data"}
+    return {"Name": "First Data"}
 
+# =========================
+# 🔐 AUTH ROUTES
+# =========================
 
-# Auth API
-# register
-@app.post("/auth/signup") 
+@app.post("/auth/signup")
 def create_user(user_data: User, db: Session = Depends(get_db)):
     existing_user = db.query(DBUser).filter(DBUser.email == user_data.email).first()
     if existing_user:
@@ -88,84 +159,111 @@ def create_user(user_data: User, db: Session = Depends(get_db)):
 
     return {"message": "User created", "user_id": new_user.id}
 
-# login
-@app.post("/auth/login") 
+@app.post("/auth/login")
 def verify_user(user: User, db: Session = Depends(get_db)):
     user_temp = db.query(DBUser).filter(DBUser.email == user.email).first()
 
     if not user_temp or not verify_auth_key(user.hashed_password, user_temp.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    return {"message": "Login successful", "user_id": user_temp.id}
+    token = create_session_token(user_temp.id)
 
-# Vault API
-# grabs the vault_entry for that specific user
-@app.get("/vault/{user_id_v2}", response_model=List[VaultEntryResponse])
-def grab_vault(user_id_v2: int, db: Session = Depends(get_db)):
+    response = JSONResponse({"message": "Login successful"})
+    response.set_cookie(
+        key="session",
+        value=token,
+        httponly=True
+    )
 
-    user_temp = db.query(DBVaultEntry).filter(DBVaultEntry.user_id == user_id_v2).all()
+    return response
 
-    if not user_temp:
-        return []
-    
-    return user_temp
+# =========================
+# 🔐 VAULT ROUTES (SECURED)
+# =========================
 
-# Adds vault_entry row for the specific user
-@app.post("/vault/{user_id_v2}", response_model=VaultEntryResponse)
-def new_entry(user_id_v2: int, entry: VaultEntry, db: Session = Depends(get_db)):
+@app.get("/vault", response_model=List[VaultEntryResponse])
+def grab_vault(
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return db.query(DBVaultEntry).filter(DBVaultEntry.user_id == user_id).all()
 
-    # check if user already exists by comparing id
-    user_temp = db.query(DBUser).filter(DBUser.id == user_id_v2).first()
-
-    if not user_temp:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail="User does not exist"
-        )
-    
+@app.post("/vault", response_model=VaultEntryResponse)
+def new_entry(
+    entry: VaultEntry,
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     db_entry = DBVaultEntry(
-        user_id=user_id_v2,
+        user_id=user_id,
         account=entry.account,
         password=entry.password,
         iv=entry.iv,
         salt=entry.salt
     )
+
     db.add(db_entry)
     db.commit()
     db.refresh(db_entry)
-    return db_entry
-    
 
-# grabs the vault_entry id
+    return db_entry
+
 @app.get("/vault/entry/{entry_id}", response_model=VaultEntryResponse)
-def get_entry(entry_id: int, db: Session = Depends(get_db)):
-    entry = db.query(DBVaultEntry).filter(DBVaultEntry.id == entry_id).first()
+def get_entry(
+    entry_id: int,
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    entry = db.query(DBVaultEntry).filter(
+        DBVaultEntry.id == entry_id,
+        DBVaultEntry.user_id == user_id
+    ).first()
+
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
+
     return entry
 
-# updates the vault_entry id
 @app.put("/vault/entry/{entry_id}", response_model=VaultEntryResponse)
-def update_entry(entry_id: int, updated_data: VaultEntry, db: Session = Depends(get_db)):
-    db_entry = db.query(DBVaultEntry).filter(DBVaultEntry.id == entry_id).first()
+def update_entry(
+    entry_id: int,
+    updated_data: VaultEntry,
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    db_entry = db.query(DBVaultEntry).filter(
+        DBVaultEntry.id == entry_id,
+        DBVaultEntry.user_id == user_id
+    ).first()
+
     if not db_entry:
         raise HTTPException(status_code=404, detail="Entry not found")
-    
+
     db_entry.account = updated_data.account
     db_entry.password = updated_data.password
     db_entry.iv = updated_data.iv
     db_entry.salt = updated_data.salt
+
     db.commit()
     db.refresh(db_entry)
+
     return db_entry
 
-# Deletes the vault_entry id
 @app.delete("/vault/entry/{entry_id}")
-def delete_entry(entry_id: int, db: Session = Depends(get_db)):
-    db_entry = db.query(DBVaultEntry).filter(DBVaultEntry.id == entry_id).first()
+def delete_entry(
+    entry_id: int,
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    db_entry = db.query(DBVaultEntry).filter(
+        DBVaultEntry.id == entry_id,
+        DBVaultEntry.user_id == user_id
+    ).first()
+
     if not db_entry:
         raise HTTPException(status_code=404, detail="Entry not found")
-    
+
     db.delete(db_entry)
     db.commit()
+
     return {"message": "Entry deleted"}
