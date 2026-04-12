@@ -16,12 +16,8 @@ import os
 
 from fastapi.responses import JSONResponse
 
-# ✅ CREATE APP FIRST (FIXED)
 app = FastAPI()
 
-# =========================
-# 🔐 CRYPTO HELPERS
-# =========================
 
 def hash_auth_key(auth_key: str) -> str:
     return bcrypt.hashpw(auth_key.encode(), bcrypt.gensalt()).decode()
@@ -67,9 +63,7 @@ def verify_session_token(token: str):
     except:
         return None
 
-# =========================
-# 📦 DATABASE DEPENDENCY
-# =========================
+#Database dependencey
 
 def get_db():
     db = get_session()
@@ -78,9 +72,7 @@ def get_db():
     finally:
         db.close()
 
-# =========================
-# 🔐 AUTH DEPENDENCY
-# =========================
+#Authentication Dependency
 
 def get_current_user(request: Request):
     token = request.cookies.get("session")
@@ -95,9 +87,7 @@ def get_current_user(request: Request):
 
     return user_id
 
-# =========================
-# 📄 MODELS
-# =========================
+#Models
 
 class User(BaseModel):
     email: str
@@ -121,23 +111,16 @@ class VaultEntryResponse(VaultEntry):
     class Config:
         from_attributes = True
 
-# =========================
-# 🧱 CREATE TABLES
-# =========================
+
 
 Base.metadata.create_all(bind=engine)
 
-# =========================
-# 🧪 TEST ROUTE
-# =========================
 
 @app.get("/")
 def index():
     return {"Name": "First Data"}
 
-# =========================
-# 🔐 AUTH ROUTES
-# =========================
+
 
 @app.post("/auth/signup")
 def create_user(user_data: User, db: Session = Depends(get_db)):
@@ -176,10 +159,6 @@ def verify_user(user: User, db: Session = Depends(get_db)):
     )
 
     return response
-
-# =========================
-# 🔐 VAULT ROUTES (SECURED)
-# =========================
 
 @app.get("/vault", response_model=List[VaultEntryResponse])
 def grab_vault(
