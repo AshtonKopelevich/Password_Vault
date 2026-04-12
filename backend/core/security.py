@@ -1,4 +1,3 @@
-import os
 import hmac
 import hashlib
 import base64
@@ -6,6 +5,7 @@ import json
 from datetime import datetime, timedelta
 
 from passlib.context import CryptContext
+from backend.app.config import SESSION_SECRET
 
 # ---------------------------------------------------------------------------
 # Password Hashing (authKey)
@@ -33,10 +33,6 @@ def verify_auth_key(plain_auth_key: str, hashed_auth_key: str) -> bool:
 # ---------------------------------------------------------------------------
 # Vault Entry Validation
 # ---------------------------------------------------------------------------
-# NOTE: In zero-knowledge architecture the frontend handles all
-# encryption/decryption. The server never holds the encryptionKey and
-# therefore cannot decrypt vault entries. This function only checks that
-# the blobs are the right shape before persisting them.
 
 def validate_vault_entry(password: bytes, iv: bytes, salt: bytes) -> bool:
     """
@@ -56,23 +52,10 @@ def validate_vault_entry(password: bytes, iv: bytes, salt: bytes) -> bool:
 # Session Cookie Helpers
 # ---------------------------------------------------------------------------
 
-SESSION_SECRET = os.environ.get("SESSION_SECRET")
-
-
-def _get_secret() -> str:
-    """Raises clearly if SESSION_SECRET was never set."""
-    if not SESSION_SECRET:
-        raise RuntimeError(
-            "SESSION_SECRET environment variable is not set. "
-            "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
-        )
-    return SESSION_SECRET
-
-
 def _sign(data: str) -> str:
     """HMAC-SHA256 signature using the session secret."""
     return hmac.new(
-        _get_secret().encode(),
+        SESSION_SECRET.encode(),
         data.encode(),
         hashlib.sha256,
     ).hexdigest()
