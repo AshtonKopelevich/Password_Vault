@@ -71,7 +71,7 @@ Generate a secret:
 ```bash
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
-
+KEY WILL BE SHARED ON DISCORD
 A `.env.example` is committed to the repo with empty keys for reference.
 
 ### 5. Run the Backend

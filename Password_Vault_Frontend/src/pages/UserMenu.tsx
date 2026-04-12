@@ -11,10 +11,6 @@ function bufferToBase64(buffer: ArrayBuffer): string {
     return btoa(String.fromCharCode(...new Uint8Array(buffer)));
 }
 
-function base64ToBuffer(b64: string): ArrayBuffer {
-    return Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer;
-}
-
 async function encryptPassword(plaintext: string, encryptionKeyHex: string) {
     const keyBytes = Uint8Array.from(
         encryptionKeyHex.match(/.{2}/g)!.map(b => parseInt(b, 16))
@@ -38,29 +34,6 @@ async function encryptPassword(plaintext: string, encryptionKeyHex: string) {
     };
 }
 
-async function decryptPassword(
-    ciphertextB64: string,
-    ivB64: string,
-    encryptionKeyHex: string
-): Promise<string> {
-    const keyBytes = Uint8Array.from(
-        encryptionKeyHex.match(/.{2}/g)!.map(b => parseInt(b, 16))
-    );
-    const key = await crypto.subtle.importKey(
-        "raw",
-        keyBytes,
-        { name: "AES-GCM" },
-        false,
-        ["decrypt"]
-    );
-    const plaintext = await crypto.subtle.decrypt(
-        { name: "AES-GCM", iv: base64ToBuffer(ivB64) },
-        key,
-        base64ToBuffer(ciphertextB64)
-    );
-    return new TextDecoder().decode(plaintext);
-}
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -68,13 +41,9 @@ async function decryptPassword(
 function UserMenu() {
     const navigate = useNavigate();
 
-    // Change-password form state
     const [newPassword, setNewPassword] = useState("");
     const [newPassword2, setNewPassword2] = useState("");
     const [changeMsg, setChangeMsg] = useState("");
-
-    // Status messages
-    const [submitMsg, setSubmitMsg] = useState("");
 
     // ---------------------------------------------------------------------------
     // Helpers — pull session data or boot to login
@@ -116,15 +85,14 @@ function UserMenu() {
                 session.encryptionKey
             );
 
-            // salt must be 16 bytes — generate a fresh one per entry
             const salt = bufferToBase64(crypto.getRandomValues(new Uint8Array(16)).buffer);
 
-            const response = await fetch(`http://localhost:8000/vault/entry/${session.userId}`, {
+            const response = await fetch(`/vault/entry/${session.userId}`, {
                 method: "PUT",
                 credentials: "include",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    account: "",   // preserves existing account label; caller should pass entry_id
+                    account: "",
                     password: encryptedPassword,
                     iv,
                     salt,
@@ -151,7 +119,7 @@ function UserMenu() {
 
     async function handleLogout() {
         try {
-            await fetch("http://localhost:8000/auth/logout", {
+            await fetch("/auth/logout", {
                 method: "POST",
                 credentials: "include",
             });
@@ -207,7 +175,11 @@ function UserMenu() {
 
                     <ul>{passwordFormatMsg(newPassword)}</ul>
                     <p>{passwordMatchMsg(newPassword, newPassword2)}</p>
-                    {changeMsg && <p style={{ color: changeMsg.includes("success") ? "green" : "red" }}>{changeMsg}</p>}
+                    {changeMsg && (
+                        <p style={{ color: changeMsg.includes("success") ? "green" : "red" }}>
+                            {changeMsg}
+                        </p>
+                    )}
 
                     <button type="submit">Update Password</button>
                 </form>
