@@ -12,6 +12,14 @@ from pydantic import field_serializer
 from backend.models.user import User as DBUser
 from backend.models.vault_entry import VaultEntry as DBVaultEntry
 
+import bcrypt
+
+def hash_auth_key(auth_key: str) -> str:
+    return bcrypt.hashpw(auth_key.encode(), bcrypt.gensalt()).decode()
+
+def verify_auth_key(auth_key: str, hashed: str) -> bool:
+    return bcrypt.checkpw(auth_key.encode(), hashed.encode())
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
@@ -62,31 +70,33 @@ def index():
 # register
 @app.post("/auth/signup") 
 def create_user(user_data: User, db: Session = Depends(get_db)):
-    # check if user already exists
     existing_user = db.query(DBUser).filter(DBUser.email == user_data.email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
-    
+
+    hashed = hash_auth_key(user_data.hashed_password)
+
     new_user = DBUser(
         email=user_data.email,
         username=user_data.username,
-        password=user_data.hashed_password # This should be hashed in production!
+        password=hashed
     )
 
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+
     return {"message": "User created", "user_id": new_user.id}
 
 # login
 @app.post("/auth/login") 
 def verify_user(user: User, db: Session = Depends(get_db)):
     user_temp = db.query(DBUser).filter(DBUser.email == user.email).first()
-    if not user_temp or user.hashed_password != user_temp.password:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    return {"message": "Login successful", "token": "fake-jwt-token-for-now"} # idk maybe need to fix
 
+    if not user_temp or not verify_auth_key(user.hashed_password, user_temp.password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    return {"message": "Login successful", "user_id": user_temp.id}
 
 # Vault API
 # grabs the vault_entry for that specific user
