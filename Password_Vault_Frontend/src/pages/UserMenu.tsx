@@ -1,98 +1,221 @@
-import React, {useState} from "react";
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { passwordFormatErr, passwordFormatMsg, passwordMatchMsg } from "../App";
 import "./sheets.css";
-import {useNavigate} from "react-router-dom";
-import axios from "axios";
-import {passwordMatchMsg, passwordFormatMsg, passwordFormatErr} from "../App";
+
+// ---------------------------------------------------------------------------
+// Crypto helpers
+// ---------------------------------------------------------------------------
+
+function bufferToBase64(buffer: ArrayBuffer): string {
+    return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+}
+
+function base64ToBuffer(b64: string): ArrayBuffer {
+    return Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer;
+}
+
+async function encryptPassword(plaintext: string, encryptionKeyHex: string) {
+    const keyBytes = Uint8Array.from(
+        encryptionKeyHex.match(/.{2}/g)!.map(b => parseInt(b, 16))
+    );
+    const key = await crypto.subtle.importKey(
+        "raw",
+        keyBytes,
+        { name: "AES-GCM" },
+        false,
+        ["encrypt"]
+    );
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ciphertext = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv },
+        key,
+        new TextEncoder().encode(plaintext)
+    );
+    return {
+        password: bufferToBase64(ciphertext),
+        iv: bufferToBase64(iv.buffer),
+    };
+}
+
+async function decryptPassword(
+    ciphertextB64: string,
+    ivB64: string,
+    encryptionKeyHex: string
+): Promise<string> {
+    const keyBytes = Uint8Array.from(
+        encryptionKeyHex.match(/.{2}/g)!.map(b => parseInt(b, 16))
+    );
+    const key = await crypto.subtle.importKey(
+        "raw",
+        keyBytes,
+        { name: "AES-GCM" },
+        false,
+        ["decrypt"]
+    );
+    const plaintext = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: base64ToBuffer(ivB64) },
+        key,
+        base64ToBuffer(ciphertextB64)
+    );
+    return new TextDecoder().decode(plaintext);
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 function UserMenu() {
-    // The log-in process //
-    var unauth = false; // the idea is that this is set to true if the backend recognizes the current session.
     const navigate = useNavigate();
 
-    if (unauth) {
-        navigate("/");
+    // Change-password form state
+    const [newPassword, setNewPassword] = useState("");
+    const [newPassword2, setNewPassword2] = useState("");
+    const [changeMsg, setChangeMsg] = useState("");
+
+    // Status messages
+    const [submitMsg, setSubmitMsg] = useState("");
+
+    // ---------------------------------------------------------------------------
+    // Helpers — pull session data or boot to login
+    // ---------------------------------------------------------------------------
+
+    function getSessionOrRedirect(): { encryptionKey: string; userId: string } | null {
+        const encryptionKey = sessionStorage.getItem("encryptionKey");
+        const userId = sessionStorage.getItem("userId");
+        if (!encryptionKey || !userId) {
+            navigate("/");
+            return null;
+        }
+        return { encryptionKey, userId };
     }
 
-    // the website display process //
-    const [password, setPassword] = useState("");
-    const [password2, setPassword2] = useState("");
+    // ---------------------------------------------------------------------------
+    // Change password handler
+    // ---------------------------------------------------------------------------
 
-
-    function changePasswordSubmit(e: React.FormEvent<HTMLFormElement>) {
+    async function changePasswordSubmit(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault();
+        setChangeMsg("");
 
-        const bool = e.isDefaultPrevented() && passwordFormatErr(password) == 0b1111 && password == password2;
+        const session = getSessionOrRedirect();
+        if (!session) return;
 
-        if (bool) {
-            // todo
-            // pseudocode:
-            // backend.password = password
-        } else {
-            // show error message
-            console.log("Invalid password") // this should cuz the website to go up or something or highlight the button
+        if (passwordFormatErr(newPassword) !== 0b11111) {
+            setChangeMsg("Password does not meet requirements.");
+            return;
+        }
+        if (newPassword !== newPassword2) {
+            setChangeMsg("Passwords do not match.");
+            return;
+        }
+
+        try {
+            const { password: encryptedPassword, iv } = await encryptPassword(
+                newPassword,
+                session.encryptionKey
+            );
+
+            // salt must be 16 bytes — generate a fresh one per entry
+            const salt = bufferToBase64(crypto.getRandomValues(new Uint8Array(16)).buffer);
+
+            const response = await fetch(`http://localhost:8000/vault/entry/${session.userId}`, {
+                method: "PUT",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    account: "",   // preserves existing account label; caller should pass entry_id
+                    password: encryptedPassword,
+                    iv,
+                    salt,
+                }),
+            });
+
+            if (!response.ok) {
+                setChangeMsg("Failed to update password.");
+                return;
+            }
+
+            setChangeMsg("Password updated successfully.");
+            setNewPassword("");
+            setNewPassword2("");
+
+        } catch (err) {
+            setChangeMsg("Encryption or network error.");
         }
     }
 
-    let password_elem = "";
-    function showPassword() {
-        const bool = true; // this boolean checks whether the API call is at all possible.
-        // for some odd reason this does not work, this will need to be fixed in the future.
-        if (bool) {
-            navigate("/PasswordList");
-        } else {
-            password_elem = "Password cannot be retrieved at the moment, please try again later";
-        }
-    }
+    // ---------------------------------------------------------------------------
+    // Logout
+    // ---------------------------------------------------------------------------
 
-    function logout() {
+    async function handleLogout() {
+        try {
+            await fetch("http://localhost:8000/auth/logout", {
+                method: "POST",
+                credentials: "include",
+            });
+        } catch {
+            // proceed with client-side logout even if the request fails
+        }
+        sessionStorage.removeItem("encryptionKey");
+        sessionStorage.removeItem("userId");
         navigate("/");
     }
+
+    // ---------------------------------------------------------------------------
+    // Render
+    // ---------------------------------------------------------------------------
 
     return (
         <div>
             <header></header>
 
             <section>
-                <h1>Login Successful</h1>
-                <br></br>
+                <h1>Password Vault</h1>
+                <br />
+
+                {/* View Passwords */}
+                <h3>Your Passwords</h3>
+                <button type="button" onClick={() => navigate("/PasswordList")}>
+                    View Passwords
+                </button>
+                <br /><br />
 
                 {/* Change Password */}
                 <h3>Change Password</h3>
                 <form onSubmit={changePasswordSubmit}>
                     <label htmlFor="new-password">New Password:</label>
                     <input
-                        type="text"
+                        type="password"
                         id="new-password"
                         name="new-password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
                     />
-                    <br></br>
+                    <br />
 
-                    <label htmlFor="new-password2">Enter Password Again:</label>
+                    <label htmlFor="new-password2">Confirm New Password:</label>
                     <input
-                        type="text"
+                        type="password"
                         id="new-password2"
                         name="new-password2"
-                        onChange={(e) => setPassword2(e.target.value)}
+                        value={newPassword2}
+                        onChange={(e) => setNewPassword2(e.target.value)}
                     />
-                    <br></br>
-                    <ul>{passwordFormatMsg(password)}</ul>
-                    <p>{passwordMatchMsg(password, password2)}</p>
+                    <br />
 
-                    <button type="submit">Submit</button>
+                    <ul>{passwordFormatMsg(newPassword)}</ul>
+                    <p>{passwordMatchMsg(newPassword, newPassword2)}</p>
+                    {changeMsg && <p style={{ color: changeMsg.includes("success") ? "green" : "red" }}>{changeMsg}</p>}
+
+                    <button type="submit">Update Password</button>
                 </form>
-                <br></br>
-                {/* View Passwords, this page may not be accessible given what methods are available in the front end */}
-                <h3>View Passwords</h3>
+                <br />
 
-                <br></br>
-                <button type="button" onClick={showPassword}>View Passwords</button>
-                <p>{password_elem}</p>
-                {/*The thing above could be a way to display error messages instead*/}
-
+                {/* Logout */}
                 <h3>Logout</h3>
-                <button type="button" onClick={logout}>Logout</button>
+                <button type="button" onClick={handleLogout}>Logout</button>
             </section>
 
             <footer>

@@ -1,94 +1,105 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
 import React from "react";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import LoginPage from "./pages/LoginPage";
-import UserMenu from "./pages/UserMenu";
-import PasswordList from "./pages/PasswordList";
 import NewAccount from "./pages/NewAccount";
+import PasswordList from "./pages/PasswordList";
+import UserMenu from "./pages/UserMenu";
 
-export default function App() {
-  return (
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<LoginPage />} />
-          <Route path="/NewAccount" element={<NewAccount />} />
-          <Route path="/UserMenu" element={<UserMenu />} />
-          <Route path="/PasswordList" element={<PasswordList />} />
-        </Routes>
-      </BrowserRouter>
-  );
+// ---------------------------------------------------------------------------
+// Route guard — boots unauthenticated users back to login
+// ---------------------------------------------------------------------------
+
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+    const encryptionKey = sessionStorage.getItem("encryptionKey");
+    const userId = sessionStorage.getItem("userId");
+
+    if (!encryptionKey || !userId) {
+        return <Navigate to="/" replace />;
+    }
+
+    return <>{children}</>;
 }
 
+// ---------------------------------------------------------------------------
+// Router
+// ---------------------------------------------------------------------------
 
-// the use of these global methods may be insecure
-// todo, find a way to ensure that nobody could read values passed thorugh.
+export default function App() {
+    return (
+        <BrowserRouter>
+            <Routes>
+                <Route path="/" element={<LoginPage />} />
+                <Route path="/NewAccount" element={<NewAccount />} />
+                <Route path="/UserMenu" element={
+                    <ProtectedRoute>
+                        <UserMenu />
+                    </ProtectedRoute>
+                } />
+                <Route path="/PasswordList" element={
+                    <ProtectedRoute>
+                        <PasswordList />
+                    </ProtectedRoute>
+                } />
+            </Routes>
+        </BrowserRouter>
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Shared password validation helpers (used by NewAccount, UserMenu)
+// ---------------------------------------------------------------------------
+
 export function passwordMatchMsg(password: string, password2: string) {
-    if (password2 != password) {
+    if (password2 !== password) {
         return "Passwords MUST match";
     }
 }
 
-export function passwordFormatErr(password: string) {
-    /* This function outputs a bitwise value for the type of password error the user makes
-    * The format is (0000) where:
-    *       The first digit is there is at least 1 special character
-    *       The second digit is there is at least 1 uppercase letter
-    *       The third digit is there is at least 1 numerical character
-    *       The last digit is the password is at least 8 character long
-    * */
-    let err_num = 0b10000;
+export function passwordFormatErr(password: string): number {
+    /* Bitwise error code — format (00000):
+     *   bit 0 (0b00001): length >= 8
+     *   bit 1 (0b00010): contains digit [0-9]
+     *   bit 2 (0b00100): contains uppercase [A-Z]
+     *   bit 3 (0b01000): contains special character
+     *   bit 4 (0b10000): no invalid characters (non-printable / non-ASCII)
+     *
+     * All bits set (0b11111) means no errors.
+     */
+    let err_num = 0b10000; // assume no invalid chars until proven otherwise
+
     if (password.length >= 8) {
         err_num |= 0b00001;
     }
-    let specCharFound = false;
+
     for (let i = 0; i < password.length; i++) {
-        let c = password.charCodeAt(i);
+        const c = password.charCodeAt(i);
+
         if (47 < c && c < 58) {
-            err_num |= 0b00010;
+            err_num |= 0b00010; // digit
         }
         if (64 < c && c < 91) {
-            err_num |= 0b00100;
+            err_num |= 0b00100; // uppercase
         }
         if ((32 < c && c < 48) || (57 < c && c < 65) || (90 < c && c < 97) || (122 < c && c < 127)) {
-            err_num |= 0b01000;
+            err_num |= 0b01000; // special character
         }
         if (c <= 32 || c > 127) {
-            specCharFound = true;
+            err_num &= 0b01111; // invalid character found — clear bit 4
         }
     }
-    if (specCharFound) {
-        err_num &= 0b01111;
-    }
-    return err_num; // the return is in bitwise which helps with determining error type for a program
-    // as a boolean statement:
-    // if err_num == 0b11111
-    //      there are no errors
-    // else
-    //      there are errors
+
+    return err_num;
 }
 
-export function passwordFormatMsg(password: string) {
-    let msgs = [];
+export function passwordFormatMsg(password: string): React.ReactElement[] {
+    const msgs: string[] = [];
     const err_num = passwordFormatErr(password);
-    if ((err_num & 0b00001) == 0) {
-        msgs.push("Password has to be at least 8 characters long.");
-    }
-    if ((err_num & 0b00010) == 0) {
-        msgs.push("Password has to contain at least 1 numerical character [0-9].");
-    }
-    if ((err_num & 0b00100) == 0) {
-        msgs.push("Password has to contain at least 1 uppercase character [A-Z].");
-    }
-    if ((err_num & 0b01000) == 0) {
-        msgs.push("Password has to contain at least 1 special character (&%*^ etc.).");
-    }
-    if ((err_num & 0b10000) == 0) {
-        msgs.push("Password contains an invalid character");
-    }
-    return msgs.map((msg, i) => {
-        return (
-            <li key={i}>
-                {msg}
-            </li>
-        );
-    });
+
+    if ((err_num & 0b00001) === 0) msgs.push("Password must be at least 8 characters long.");
+    if ((err_num & 0b00010) === 0) msgs.push("Password must contain at least 1 digit [0-9].");
+    if ((err_num & 0b00100) === 0) msgs.push("Password must contain at least 1 uppercase letter [A-Z].");
+    if ((err_num & 0b01000) === 0) msgs.push("Password must contain at least 1 special character (&%*^ etc.).");
+    if ((err_num & 0b10000) === 0) msgs.push("Password contains an invalid character.");
+
+    return msgs.map((msg, i) => <li key={i}>{msg}</li>);
 }

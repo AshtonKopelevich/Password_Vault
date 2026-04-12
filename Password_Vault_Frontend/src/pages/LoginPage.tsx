@@ -1,55 +1,95 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "./sheets.css";
-import axios from 'axios';
+
+// ---------------------------------------------------------------------------
+// Crypto helpers
+// ---------------------------------------------------------------------------
+
+function bufferToHex(buffer: ArrayBuffer): string {
+    return Array.from(new Uint8Array(buffer))
+        .map(b => b.toString(16).padStart(2, "0"))
+        .join("");
+}
+
+async function deriveMasterKeys(password: string, email: string) {
+    const rawKey = await crypto.subtle.importKey(
+        "raw",
+        new TextEncoder().encode(password),
+        "PBKDF2",
+        false,
+        ["deriveBits"]
+    );
+
+    const bits = await crypto.subtle.deriveBits(
+        {
+            name: "PBKDF2",
+            salt: new TextEncoder().encode(email),
+            iterations: 100000,
+            hash: "SHA-256",
+        },
+        rawKey,
+        512
+    );
+
+    return {
+        authKey: bits.slice(0, 32),       // sent to backend for verification
+        encryptionKey: bits.slice(32),    // never leaves the browser
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export default function LoginPage() {
     const [email, setEmail] = useState("");
-    const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
-    const navigate = useNavigate();
     const [errMsg, setErrMsg] = useState("");
+    const navigate = useNavigate();
 
-    function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault();
+        setErrMsg("");
 
-        const bool = e.isDefaultPrevented();;
-        // User types sensative data
-        // Derive authKey & encryptionKey (derived from the PBKDF2 API)
-        // Send (hashed) authkKey to backend (not encryptionKey)
-        // Backend returns JNT
-        // use encryptionKey locally to decrypt vault data received from backend.
-        // problem with localStorage: easy to access by 3rd parties
-        if (bool) {
+        if (!email || !password) {
+            setErrMsg("Please fill in all fields.");
+            return;
+        }
+
+        try {
+            const { authKey, encryptionKey } = await deriveMasterKeys(password, email);
+
+            const response = await fetch("http://localhost:8000/auth/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",  // sends/receives the session cookie
+                body: JSON.stringify({
+                    email,
+                    username: "",        // required by backend schema; not used for login lookup
+                    hashed_password: bufferToHex(authKey),
+                }),
+            });
+
+            if (!response.ok) {
+                setErrMsg("Invalid email or password.");
+                return;
+            }
+
+            const data = await response.json();
+
+            // encryptionKey stays in sessionStorage only — clears on tab close
+            sessionStorage.setItem("encryptionKey", bufferToHex(encryptionKey));
+            sessionStorage.setItem("userId", String(data.user_id));
 
             navigate("/UserMenu");
 
-            // The code below is commented out so that other features of the code could be tested without this piece interfering
-            // due to us lacking encryption methods at this point in time.
-            // const userData = {
-            //     email: email,
-            //     username: username,
-            //     hashed_password: password // todo encrypt the password
-            // };
-
-            // // todo define the session id
-            // axios.post("http://localhost:8000/auth/login", userData)
-            //         .then(res => {
-            //             let msg = res.data()["message"];
-            //             if (msg === "Login successful") {
-            //                 navigate("/UserMenu");
-            //             } else {
-            //                 setErrMsg("Invalid credentials");
-            //             }
-            //         }).catch(reason => setErrMsg("There was an error on log in"));
-
-        } else {
-            // show error message
-            setErrMsg("Unable to handle password request");
+        } catch (err) {
+            setErrMsg("Something went wrong. Please try again.");
         }
     }
 
-    function register() {
+    function handleRegister() {
         navigate("/NewAccount");
     }
 
@@ -63,40 +103,31 @@ export default function LoginPage() {
                 <form onSubmit={handleSubmit}>
                     <label htmlFor="email">Email:</label>
                     <input
-                        type="text"
+                        type="email"
                         id="email"
                         name="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                     />
 
-                    <label htmlFor="username">Username:</label>
+                    <br />
+                    <label htmlFor="password">Master Password:</label>
                     <input
-                        type="text"
-                        id="username"
-                        name="username"
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                    />
-
-                    <br></br>
-                    <label htmlFor="password">Password:</label>
-                    <input
-                        type="text"
+                        type="password"
                         id="password"
                         name="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                     />
 
-                    <br></br>
-                    <button type="submit">Submit</button>
+                    <br />
+                    {errMsg && <p style={{ color: "red" }}>{errMsg}</p>}
+                    <button type="submit">Login</button>
                 </form>
-                <p>{errMsg}</p>
-                
-                <br></br>
+
+                <br />
                 <p>Don't have an account?</p>
-                <button type="button" onClick={register}>Register here!</button>
+                <button type="button" onClick={handleRegister}>Register here!</button>
             </section>
 
             <footer>

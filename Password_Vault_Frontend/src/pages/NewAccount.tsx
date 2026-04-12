@@ -1,45 +1,108 @@
-import React, {useState} from "react";
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { passwordFormatErr, passwordFormatMsg, passwordMatchMsg } from "../App";
 import "./sheets.css";
-import {useNavigate} from "react-router-dom";
-import axios from "axios";
-import {passwordMatchMsg, passwordFormatMsg, passwordFormatErr} from "../App";
+
+// ---------------------------------------------------------------------------
+// Crypto helpers (same as LoginPage — authKey derived from master password)
+// ---------------------------------------------------------------------------
+
+function bufferToHex(buffer: ArrayBuffer): string {
+    return Array.from(new Uint8Array(buffer))
+        .map(b => b.toString(16).padStart(2, "0"))
+        .join("");
+}
+
+async function deriveMasterKeys(password: string, email: string) {
+    const rawKey = await crypto.subtle.importKey(
+        "raw",
+        new TextEncoder().encode(password),
+        "PBKDF2",
+        false,
+        ["deriveBits"]
+    );
+
+    const bits = await crypto.subtle.deriveBits(
+        {
+            name: "PBKDF2",
+            salt: new TextEncoder().encode(email),
+            iterations: 100000,
+            hash: "SHA-256",
+        },
+        rawKey,
+        512
+    );
+
+    return {
+        authKey: bits.slice(0, 32),    // sent to backend — stored as bcrypt hash
+        encryptionKey: bits.slice(32), // never leaves the browser
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 function NewAccount() {
     const navigate = useNavigate();
 
-    // the website display process //
     const [email, setEmail] = useState("");
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [password2, setPassword2] = useState("");
-    const [register, setRegister] = useState("");
+    const [statusMsg, setStatusMsg] = useState("");
 
-    function newUserSubmit(e: React.FormEvent<HTMLFormElement>) {
+    async function newUserSubmit(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault();
+        setStatusMsg("");
 
-        const bool = e.isDefaultPrevented() && passwordFormatErr(password) == 0b11111;
+        if (!email || !username || !password) {
+            setStatusMsg("Please fill in all fields.");
+            return;
+        }
 
-        if (bool) {
-            const newUser = {
-                email: email,
-                username: username,
-                hashed_password: password // todo, create a global method that hashes the password
+        if (passwordFormatErr(password) !== 0b11111) {
+            setStatusMsg("Password does not meet the requirements below.");
+            return;
+        }
+
+        if (password !== password2) {
+            setStatusMsg("Passwords do not match.");
+            return;
+        }
+
+        try {
+            const { authKey, encryptionKey } = await deriveMasterKeys(password, email);
+
+            const response = await fetch("http://localhost:8000/auth/signup", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",  // receives the session cookie on success
+                body: JSON.stringify({
+                    email,
+                    username,
+                    hashed_password: bufferToHex(authKey),
+                }),
+            });
+
+            if (!response.ok) {
+                const data = await response.json();
+                setStatusMsg(data.detail ?? "Registration failed. Please try again.");
+                return;
             }
 
-            axios.post("http://localhost:8000/auth/signup", newUser) // todo, add session id
-                    .then(res => {
-                        setRegister("User succesfully registered!");
-                        navigate("/");
-                    })
-                    .catch(reason => setRegister("Unable to register due to " + reason));
-        } else {
-            // show error message
-            console.log("Invalid password") // this should cuz the website to go up or something or highlight the button
-        }
-    }
+            const data = await response.json();
 
-    function login() {
-        navigate("/");
+            // Log the user straight in — store encryptionKey and userId just
+            // like LoginPage does so ProtectedRoute lets them through
+            sessionStorage.setItem("encryptionKey", bufferToHex(encryptionKey));
+            sessionStorage.setItem("userId", String(data.user_id));
+
+            navigate("/UserMenu");
+
+        } catch (err) {
+            setStatusMsg("Something went wrong. Please try again.");
+        }
     }
 
     return (
@@ -47,61 +110,65 @@ function NewAccount() {
             <header></header>
 
             <section>
-                <h1>Register your account here!</h1>
-                <br></br>
+                <h1>Create an Account</h1>
+                <br />
 
-                {/* Add New Account, this should probably be its own webpage, the shared code could be global */}
-                <h3>Add New Account</h3>
                 <form onSubmit={newUserSubmit}>
                     <label htmlFor="email">Email:</label>
-                    <input 
-                        type="text"
+                    <input
+                        type="email"
                         id="email"
                         name="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                     />
-                    <br></br>
+                    <br />
 
-                    <label htmlFor="new-acc-user">Username:</label>
+                    <label htmlFor="username">Username:</label>
                     <input
                         type="text"
-                        id="new-user"
-                        name="new-user"
+                        id="username"
+                        name="username"
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
                     />
-                    <br></br>
+                    <br />
 
-                    <label htmlFor="new-acc-password">New Password:</label>
+                    <label htmlFor="new-password">Password:</label>
                     <input
-                        type="text"
+                        type="password"
                         id="new-password"
                         name="new-password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                     />
+                    <br />
 
-                    <label htmlFor="new-acc-password-ret">Enter password again:</label>
+                    <label htmlFor="new-password2">Confirm Password:</label>
                     <input
-                        type="text"
+                        type="password"
                         id="new-password2"
                         name="new-password2"
                         value={password2}
                         onChange={(e) => setPassword2(e.target.value)}
                     />
-                    <br></br>
-                    <p>{passwordFormatMsg(password)}</p>
-                    <p>{passwordMatchMsg(password, password2)}</p>
-                    {/*The code above probably needs a different method, or we implement inputs*/}
+                    <br />
 
-                    <button type="submit">Submit</button>
+                    <ul>{passwordFormatMsg(password)}</ul>
+                    <p>{passwordMatchMsg(password, password2)}</p>
+
+                    {statusMsg && (
+                        <p style={{ color: statusMsg.includes("success") ? "green" : "red" }}>
+                            {statusMsg}
+                        </p>
+                    )}
+
+                    <button type="submit">Register</button>
                 </form>
-                <p>{register}</p>
-                
-                <br></br>
-                <p>Have an account?</p>
-                <button type="button" onClick={login}>Log in here!</button>
+
+                <br />
+                <p>Already have an account?</p>
+                <button type="button" onClick={() => navigate("/")}>Log in here!</button>
             </section>
 
             <footer>
