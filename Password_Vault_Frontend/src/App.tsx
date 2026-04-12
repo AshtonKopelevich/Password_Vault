@@ -1,5 +1,6 @@
 import React from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import AddPassword from "./pages/AddPassword";
 import LoginPage from "./pages/LoginPage";
 import NewAccount from "./pages/NewAccount";
 import PasswordList from "./pages/PasswordList";
@@ -38,6 +39,11 @@ export default function App() {
                 <Route path="/PasswordList" element={
                     <ProtectedRoute>
                         <PasswordList />
+                    </ProtectedRoute>
+                } />
+                <Route path="/AddPassword" element={
+                    <ProtectedRoute>
+                        <AddPassword />
                     </ProtectedRoute>
                 } />
             </Routes>

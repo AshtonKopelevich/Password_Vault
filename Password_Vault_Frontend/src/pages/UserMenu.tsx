@@ -150,6 +150,13 @@ function UserMenu() {
                 </button>
                 <br /><br />
 
+                {/* Add Password */}
+                <h3>Add New Password</h3>
+                <button type="button" onClick={() => navigate("/AddPassword")}>
+                    Add Password
+                </button>
+                <br /><br />
+
                 {/* Change Password */}
                 <h3>Change Password</h3>
                 <form onSubmit={changePasswordSubmit}>
