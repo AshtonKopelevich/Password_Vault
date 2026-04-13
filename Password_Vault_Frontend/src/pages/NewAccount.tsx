@@ -26,7 +26,7 @@ async function deriveMasterKeys(password: string, email: string) {
         {
             name: "PBKDF2",
             salt: new TextEncoder().encode(email),
-            iterations: 100000,
+            iterations: 600000,
             hash: "SHA-256",
         },
         rawKey,
