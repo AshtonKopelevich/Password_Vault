@@ -183,37 +183,38 @@ function PasswordList() {
                 {entries.length === 0 && !loadError && (
                     <p>No saved passwords yet.</p>
                 )}
-
-                <ul style={{ listStyle: "none", padding: 0 }}>
-                    {entries.map(entry => (
-                        <li key={entry.id} style={{ marginBottom: "1rem" }}>
-                            <strong>{entry.account}</strong>
-                            <br />
-                            {revealed[entry.id] !== undefined ? (
-                                <span>{revealed[entry.id]}</span>
-                            ) : (
-                                <span>••••••••</span>
-                            )}
-                            {decryptError[entry.id] && (
-                                <span style={{ color: "red" }}> {decryptError[entry.id]}</span>
-                            )}
-                            <br />
-                            <button
-                                type="button"
-                                onClick={() => toggleReveal(entry)}
-                            >
-                                {revealed[entry.id] !== undefined ? "Hide" : "Reveal"}
-                            </button>
-                            {" "}
-                            <button
-                                type="button"
-                                onClick={() => deleteEntry(entry.id)}
-                            >
-                                Delete
-                            </button>
-                        </li>
-                    ))}
-                </ul>
+                <div style={{ height:'300px', overflowY: 'auto', border: '1px solid #ccc', padding: '10px'}}>
+                    <ul style={{ listStyle: "none", padding: 0 }}>
+                        {entries.map(entry => (
+                            <li key={entry.id} style={{ marginBottom: "1rem" }}>
+                                <strong>{entry.account}</strong>
+                                <br />
+                                {revealed[entry.id] !== undefined ? (
+                                    <span>{revealed[entry.id]}</span>
+                                ) : (
+                                    <span>••••••••</span>
+                                )}
+                                {decryptError[entry.id] && (
+                                    <span style={{ color: "red" }}> {decryptError[entry.id]}</span>
+                                )}
+                                <br />
+                                <button
+                                    type="button"
+                                    onClick={() => toggleReveal(entry)}
+                                >
+                                    {revealed[entry.id] !== undefined ? "Hide" : "Reveal"}
+                                </button>
+                                {" "}
+                                <button
+                                    type="button"
+                                    onClick={() => deleteEntry(entry.id)}
+                                >
+                                    Delete
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+            </div>
             </section>
 
             <footer>
