@@ -130,6 +130,15 @@ def get_current_user_id(session_id: str = Cookie(None)) -> int:
 def index():
     return {"message": "Password Vault API"}
 
+# username
+@app.get("/grab-username")
+def getUser(curr_user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
+    findUserName = db.query(DBUser).filter(DBUser.id == curr_user_id).first()
+    if not findUserName:
+        raise HTTPException(status_code=401, detail="Username not found")
+    else:
+        return {"message": "Username successfully retrieved", "username": findUserName.username}
+
 
 @app.post("/auth/signup")
 @limiter.limit("3/minute")
