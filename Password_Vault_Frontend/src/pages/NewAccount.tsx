@@ -1,43 +1,8 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { passwordFormatErr, passwordFormatMsg, passwordMatchMsg } from "../App";
+import { bufferToHex, generateRandomSalt, deriveMasterKeys } from "../utils/crypto";
 import "./sheets.css";
-
-// ---------------------------------------------------------------------------
-// Crypto helpers (same as LoginPage — authKey derived from master password)
-// ---------------------------------------------------------------------------
-
-function bufferToHex(buffer: ArrayBuffer): string {
-    return Array.from(new Uint8Array(buffer))
-        .map(b => b.toString(16).padStart(2, "0"))
-        .join("");
-}
-
-async function deriveMasterKeys(password: string, email: string) {
-    const rawKey = await crypto.subtle.importKey(
-        "raw",
-        new TextEncoder().encode(password),
-        "PBKDF2",
-        false,
-        ["deriveBits"]
-    );
-
-    const bits = await crypto.subtle.deriveBits(
-        {
-            name: "PBKDF2",
-            salt: new TextEncoder().encode(email),
-            iterations: 600000,
-            hash: "SHA-256",
-        },
-        rawKey,
-        512
-    );
-
-    return {
-        authKey: bits.slice(0, 32),    // sent to backend — stored as bcrypt hash
-        encryptionKey: bits.slice(32), // never leaves the browser
-    };
-}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -72,8 +37,13 @@ function NewAccount() {
         }
 
         try {
-            const { authKey, encryptionKey } = await deriveMasterKeys(password, email);
+            // Step 1: Generate a cryptographically random 16-byte salt
+            const salt = generateRandomSalt();
 
+            // Step 2: Derive keys with the random salt
+            const { authKey, encryptionKey } = await deriveMasterKeys(password, salt);
+
+            // Step 3: Send registration request with salt
             const response = await fetch("http://localhost:8000/auth/signup", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -82,6 +52,7 @@ function NewAccount() {
                     email,
                     username,
                     hashed_password: bufferToHex(authKey),
+                    salt: bufferToHex(salt),  // NEW: send random salt to backend
                 }),
             });
 
@@ -101,6 +72,7 @@ function NewAccount() {
             navigate("/UserMenu");
 
         } catch (err) {
+            console.error("Registration error:", err);
             setStatusMsg("Something went wrong. Please try again.");
         }
     }

@@ -44,6 +44,7 @@ class User(BaseModel):
     email: str
     username: str
     hashed_password: str  # PBKDF2-derived authKey from the frontend, NOT the raw password
+    salt: str = None  # Optional: frontend sends hex-encoded random salt during signup
 
 
 class VaultEntryIn(BaseModel):
@@ -122,16 +123,56 @@ def index():
     return {"message": "Password Vault API"}
 
 
+@app.get("/auth/get-salt")
+def get_user_salt(email: str, db: Session = Depends(get_db)):
+    """
+    Retrieve the cryptographic salt for a user's PBKDF2 key derivation.
+
+    Args:
+        email: User's email address
+
+    Returns:
+        Hex-encoded 32-character salt (16 bytes)
+
+    Security notes:
+        - Salt is not secret; it's meant to be unique per-user and prevent rainbow tables
+        - If user not found or salt is NULL, generate a random salt on first login
+        - This endpoint does NOT require authentication
+    """
+    user = db.query(DBUser).filter(DBUser.email == email).first()
+
+    if not user or not user.salt:
+        # User not found or has no salt yet (backfill case)
+        # Return a zero salt; frontend will handle and trigger salt generation on login
+        return {"salt": "00" * 16}  # 32 hex chars = 16 bytes of zeros
+
+    return {"salt": user.salt}
+
+
 @app.post("/auth/signup")
 def create_user(user_data: User, response: Response, db: Session = Depends(get_db)):
     existing = db.query(DBUser).filter(DBUser.email == user_data.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    # Validate salt: must be 32 hex characters (16 bytes)
+    if user_data.salt:
+        if len(user_data.salt) != 32 or not all(c in "0123456789abcdefABCDEF" for c in user_data.salt):
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid salt format. Must be 32 hex characters (16 bytes)."
+            )
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail="Salt is required. Frontend must generate and send a random 16-byte salt."
+        )
+
     new_user = DBUser(
         email=user_data.email,
         username=user_data.username,
         password=hash_auth_key(user_data.hashed_password),
+        salt=user_data.salt.lower(),  # Store as lowercase hex
     )
     db.add(new_user)
     db.commit()
@@ -156,6 +197,15 @@ def verify_user(user: User, response: Response, db: Session = Depends(get_db)):
 
     if not user_temp or not verify_auth_key(user.hashed_password, user_temp.password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    # Backfill: If user has no salt, generate and store one
+    if not user_temp.salt:
+        import secrets
+        # Generate random 16-byte salt and convert to hex
+        random_salt = secrets.token_hex(16)  # 16 bytes = 32 hex chars
+        user_temp.salt = random_salt
+        db.commit()
+        db.refresh(user_temp)
 
     token = create_session_token(user_temp.id)
     response.set_cookie(
