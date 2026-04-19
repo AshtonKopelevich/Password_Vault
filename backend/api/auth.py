@@ -1,246 +1,285 @@
-from fastapi import FastAPI, Path, HTTPException, status, Depends, Response, Cookie
-from typing import Optional
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, status, Depends, Response, Cookie
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, field_serializer, model_validator
 from sqlalchemy.orm import Session
-from typing import List, Optional
-
-#from backend.app.test import get_session, engine, Base
-from backend.app.database import get_session, engine, Base
-
+from typing import List
 import base64
-from pydantic import field_serializer
+
+from backend.app.database import get_session, engine, Base
 from backend.models.user import User as DBUser
 from backend.models.vault_entry import VaultEntry as DBVaultEntry
-from passlib.context import CryptContext
-from backend.core.security import hash_auth_key, verify_auth_key, validate_vault_entry, create_session_token, verify_session_token
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+from backend.core.security import (
+    hash_auth_key,
+    verify_auth_key,
+    validate_vault_entry,
+    create_session_token,
+    verify_session_token,
+)
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
-#source .venv/bin/activate    
-#fastapi dev backend/api/auth.py  in password_vault folder
 
-# trying to test using sample_sql let's see how it behaves and if it even behaves correctly
-# only works if the table is already created using sample_sql.db
+# ---------------------------------------------------------------------------
+# CORS — allows the React dev server (localhost:3000) to talk to this API
+# ---------------------------------------------------------------------------
+origins = [
+    "http://localhost:3000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ---------------------------------------------------------------------------
+# Pydantic schemas
+# ---------------------------------------------------------------------------
 
 class User(BaseModel):
-    email: str # who is this
+    email: str
     username: str
-    hashed_password: str # encrypted master password
-    # auth key
+    hashed_password: str  # PBKDF2-derived authKey from the frontend, NOT the raw password
 
 
-class VaultEntry(BaseModel):
-    password: bytes
-    iv: bytes
-    salt: bytes
+class VaultEntryIn(BaseModel):
+    """
+    Accepts base64-encoded strings from the frontend and decodes them to bytes.
+    The frontend sends JSON with base64 strings — not raw bytes.
+    """
     account: str
+    password: str   # base64 ciphertext
+    iv: str         # base64 IV
+    salt: str       # base64 salt
 
-class VaultEntryResponse(VaultEntry):
+    def decode_fields(self):
+        """Returns decoded bytes for password, iv, and salt."""
+        return (
+            base64.b64decode(self.password),
+            base64.b64decode(self.iv),
+            base64.b64decode(self.salt),
+        )
+
+
+class VaultEntryResponse(BaseModel):
     id: int
     user_id: int
+    account: str
+    password: str   # returned as base64
+    iv: str         # returned as base64
+    salt: str       # returned as base64
 
-    # This is the "magic" that fixes the JSON error
-    @field_serializer('password', 'iv', 'salt')
-    def serialize_bytes(self, data: bytes):
-        return base64.b64encode(data).decode('utf-8')
-    
+    @classmethod
+    def from_db(cls, entry: DBVaultEntry) -> "VaultEntryResponse":
+        return cls(
+            id=entry.id,
+            user_id=entry.user_id,
+            account=entry.account,
+            password=base64.b64encode(entry.password).decode('utf-8'),
+            iv=base64.b64encode(entry.iv).decode('utf-8'),
+            salt=base64.b64encode(entry.salt).decode('utf-8'),
+        )
+
     class Config:
         from_attributes = True
 
+
+# ---------------------------------------------------------------------------
+# DB dependency
+# ---------------------------------------------------------------------------
+
 def get_db():
-    db=get_session()
+    db = get_session()
     try:
         yield db
     finally:
         db.close()
 
-# testing (not in use)
+
+# ---------------------------------------------------------------------------
+# Session cookie dependency — used by every vault route
+# ---------------------------------------------------------------------------
+
+def get_current_user_id(session_id: str = Cookie(None)) -> int:
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Not logged in")
+    user_id = verify_session_token(session_id)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    return user_id
+
+
+# ---------------------------------------------------------------------------
+# Auth routes
+# ---------------------------------------------------------------------------
+
 @app.get("/")
 def index():
-    return {"Name" : "First Data"}
+    return {"message": "Password Vault API"}
 
 
-# Auth API
-# register
 @app.post("/auth/signup")
 def create_user(user_data: User, response: Response, db: Session = Depends(get_db)):
-    existing_user = db.query(DBUser).filter(DBUser.email == user_data.email).first()
-    if existing_user:
+    existing = db.query(DBUser).filter(DBUser.email == user_data.email).first()
+    if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
-
-    # ✅ Hash before storing — never store plaintext
-    hashed = hash_auth_key(user_data.hashed_password)
 
     new_user = DBUser(
         email=user_data.email,
         username=user_data.username,
-        password=hashed  # storing the bcrypt hash
+        password=hash_auth_key(user_data.hashed_password),
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
     token = create_session_token(new_user.id)
-
-    # cookie browser
     response.set_cookie(
         key="session_id",
         value=token,
-        httponly=True,   # JS cannot steal it
-        samesite="lax",  # CSRF protection
-        secure=False,    # Set to True if using HTTPS (production)
-        max_age=28800
+        httponly=True,
+        samesite="lax",
+        secure=False,
+        max_age=28800,
     )
-
 
     return {"message": "User created", "user_id": new_user.id}
 
-# login
+
 @app.post("/auth/login")
 def verify_user(user: User, response: Response, db: Session = Depends(get_db)):
     user_temp = db.query(DBUser).filter(DBUser.email == user.email).first()
 
-    # ✅ verify() handles the comparison securely — never compare directly
     if not user_temp or not verify_auth_key(user.hashed_password, user_temp.password):
-        raise HTTPException(
-            status_code=401,
-            detail = "Invalid password or email"
-        )
-    
-    token = create_session_token(user_temp.id)
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
+    token = create_session_token(user_temp.id)
     response.set_cookie(
         key="session_id",
         value=token,
-        httponly=True,   # JS cannot steal it
-        samesite="lax",  # CSRF protection
-        secure=False,    # Set to True if using HTTPS (production)
-        max_age=28800
+        httponly=True,
+        samesite="lax",
+        secure=False,
+        max_age=28800,
     )
 
-    return {"message": "Login successful", "username": user_temp.username}
+    return {"message": "Login successful", "user_id": user_temp.id, "username": user_temp.username}
 
-# log out
+
 @app.post("/auth/logout")
 def logout(response: Response):
-    # This tells the browser to delete the session cookie immediately
     response.delete_cookie(
         key="session_id",
         httponly=True,
         samesite="lax",
-        secure=False  # Match your login/signup settings
+        secure=False,
     )
     return {"message": "Logged out successfully"}
 
 
-# Vault API
+# ---------------------------------------------------------------------------
+# Vault routes — all protected by session cookie
+# ---------------------------------------------------------------------------
 
-# helper function for Vault API
-def get_current_user_id(session_id: str = Cookie(None)):
-    # 1. FastAPI automatically pulls 'session_id' from the Request Headers
-    if not session_id:
-        raise HTTPException(status_code=401, detail="Not logged in")
-
-    # 2. NOW we use your helper function from above
-    user_id = verify_session_token(session_id) 
-
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid session")
-
-    return user_id
-
-
-# grabs the vault_entry for that specific user
 @app.get("/vault", response_model=List[VaultEntryResponse])
-def grab_vault(curr_user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
+def grab_vault(
+    curr_user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    entries = db.query(DBVaultEntry).filter(DBVaultEntry.user_id == curr_user_id).all()
+    return [VaultEntryResponse.from_db(e) for e in entries]
 
-    PVEntryfor_that_user = db.query(DBVaultEntry).filter(DBVaultEntry.user_id == curr_user_id).all()
-    
-    return PVEntryfor_that_user
 
-
-# Adds vault_entry row for the specific user
 @app.post("/vault", response_model=VaultEntryResponse)
-def new_entry(entry: VaultEntry, curr_user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
-    
-    if not validate_vault_entry(entry.password, entry.iv, entry.salt):
-        raise HTTPException(status_code=404, detail="Malformed encryption data. Check IV and Salt lengths.")
-    
+def new_entry(
+    entry: VaultEntryIn,
+    curr_user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    password_bytes, iv_bytes, salt_bytes = entry.decode_fields()
+
+    if not validate_vault_entry(password_bytes, iv_bytes, salt_bytes):
+        raise HTTPException(
+            status_code=422,
+            detail="Malformed encryption data — check IV (12 bytes) and salt (16 bytes) lengths.",
+        )
 
     db_entry = DBVaultEntry(
         user_id=curr_user_id,
         account=entry.account,
-        password=entry.password,
-        iv=entry.iv,
-        salt=entry.salt
+        password=password_bytes,
+        iv=iv_bytes,
+        salt=salt_bytes,
     )
     db.add(db_entry)
     db.commit()
     db.refresh(db_entry)
-    return db_entry
-    
+    return VaultEntryResponse.from_db(db_entry)
 
-# grabs the vault_entry id
+
 @app.get("/vault/entry/{entry_id}", response_model=VaultEntryResponse)
-def get_entry(entry_id: int, curr_user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
-
-    # validation first
-    entry = db.query(DBVaultEntry).filter(      
+def get_entry(
+    entry_id: int,
+    curr_user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    entry = db.query(DBVaultEntry).filter(
         DBVaultEntry.id == entry_id,
         DBVaultEntry.user_id == curr_user_id,
     ).first()
-    
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
-    
-    return entry
+    return VaultEntryResponse.from_db(entry)
 
-# updates the vault_entry id
+
 @app.put("/vault/entry/{entry_id}", response_model=VaultEntryResponse)
-def update_entry(entry_id: int, updated_data: VaultEntry, curr_user_id: int = Depends(get_current_user_id),  db: Session = Depends(get_db)):
-
-     # validation first
+def update_entry(
+    entry_id: int,
+    updated_data: VaultEntryIn,
+    curr_user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
     entry = db.query(DBVaultEntry).filter(
         DBVaultEntry.id == entry_id,
-        DBVaultEntry.user_id == curr_user_id
+        DBVaultEntry.user_id == curr_user_id,
     ).first()
-
     if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+
+    password_bytes, iv_bytes, salt_bytes = updated_data.decode_fields()
+
+    if not validate_vault_entry(password_bytes, iv_bytes, salt_bytes):
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail="entry does not exist"
+            status_code=422,
+            detail="Malformed encryption data — check IV (12 bytes) and salt (16 bytes) lengths.",
         )
-    
-    if not validate_vault_entry(updated_data.password, updated_data.iv, updated_data.salt):
-        raise HTTPException(status_code=404, detail="Malformed encryption data. Check IV and Salt lengths.")
-    
+
     entry.account = updated_data.account
-    entry.password = updated_data.password
-    entry.iv = updated_data.iv
-    entry.salt = updated_data.salt
+    entry.password = password_bytes
+    entry.iv = iv_bytes
+    entry.salt = salt_bytes
     db.commit()
     db.refresh(entry)
-    return entry
+    return VaultEntryResponse.from_db(entry)
 
-# Deletes the vault_entry id
+
 @app.delete("/vault/entry/{entry_id}")
-def delete_entry(entry_id: int, curr_user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
-
-    # validation first
+def delete_entry(
+    entry_id: int,
+    curr_user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
     entry = db.query(DBVaultEntry).filter(
         DBVaultEntry.id == entry_id,
-        DBVaultEntry.user_id == curr_user_id
+        DBVaultEntry.user_id == curr_user_id,
     ).first()
-
     if not entry:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail="entry does not exist"
-        )
-    
+        raise HTTPException(status_code=404, detail="Entry not found")
+
     db.delete(entry)
     db.commit()
     return {"message": "Entry deleted"}
