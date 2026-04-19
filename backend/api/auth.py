@@ -1,9 +1,13 @@
-from fastapi import FastAPI, HTTPException, status, Depends, Response, Cookie
+from fastapi import FastAPI, HTTPException, status, Depends, Response, Cookie, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_serializer, model_validator
 from sqlalchemy.orm import Session
 from typing import List
 import base64
+
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from backend.app.database import get_session, engine, Base
 from backend.models.user import User as DBUser
@@ -19,6 +23,11 @@ from backend.core.security import (
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+
+# 1. Initialize the limiter to use the user's IP address
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ---------------------------------------------------------------------------
 # CORS — allows the React dev server (localhost:3000) to talk to this API
@@ -123,7 +132,8 @@ def index():
 
 
 @app.post("/auth/signup")
-def create_user(user_data: User, response: Response, db: Session = Depends(get_db)):
+@limiter.limit("3/minute")
+def create_user(request: Request, user_data: User, response: Response, db: Session = Depends(get_db)):
     existing = db.query(DBUser).filter(DBUser.email == user_data.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -143,7 +153,7 @@ def create_user(user_data: User, response: Response, db: Session = Depends(get_d
         value=token,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=False, # secure=True for https connection. Localhost only uses HTTP so False for now
         max_age=28800,
     )
 
@@ -151,10 +161,12 @@ def create_user(user_data: User, response: Response, db: Session = Depends(get_d
 
 
 @app.post("/auth/login")
-def verify_user(user: User, response: Response, db: Session = Depends(get_db)):
+@limiter.limit("5/minute") # 5 attempts/min
+def verify_user(request: Request, user: User, response: Response, db: Session = Depends(get_db)):
     user_temp = db.query(DBUser).filter(DBUser.email == user.email).first()
 
     if not user_temp or not verify_auth_key(user.hashed_password, user_temp.password):
+        print()
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     token = create_session_token(user_temp.id)
@@ -163,7 +175,7 @@ def verify_user(user: User, response: Response, db: Session = Depends(get_db)):
         value=token,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=False, # secure=True for https connection. Localhost only uses HTTP so False for now
         max_age=28800,
     )
 
@@ -176,7 +188,7 @@ def logout(response: Response):
         key="session_id",
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=False, # secure=True for https connection. Localhost only uses HTTP so False for now
     )
     return {"message": "Logged out successfully"}
 

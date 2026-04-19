@@ -71,8 +71,21 @@ export default function LoginPage() {
                 }),
             });
 
-            if (!response.ok) {
+            // 1. Check for Rate Limiting (SlowAPI)
+            if (response.status === 429) {
+                setErrMsg("Too many login attempts. Please wait 5 minutes before trying again.");
+                return;
+            }
+
+            // 2. Check for Invalid Credentials
+            if (response.status === 401) {
                 setErrMsg("Invalid email or password.");
+                return;
+            }
+
+            // 3. Catch-all for other server errors (500, etc.)
+            if (!response.ok) {
+                setErrMsg("Server error. Please try again later.");
                 return;
             }
 
