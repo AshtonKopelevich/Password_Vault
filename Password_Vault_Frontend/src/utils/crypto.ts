@@ -5,8 +5,6 @@
 
 /**
  * Convert an ArrayBuffer to a hex string
- * @param buffer - The buffer to convert
- * @returns Hex-encoded string (lowercase)
  */
 export function bufferToHex(buffer: ArrayBuffer): string {
     return Array.from(new Uint8Array(buffer))
@@ -16,8 +14,6 @@ export function bufferToHex(buffer: ArrayBuffer): string {
 
 /**
  * Convert a hex string to a Uint8Array
- * @param hex - Hex-encoded string (lowercase or uppercase)
- * @returns Uint8Array
  */
 export function hexToBuffer(hex: string): Uint8Array {
     if (hex.length % 2 !== 0) {
@@ -32,30 +28,25 @@ export function hexToBuffer(hex: string): Uint8Array {
 
 /**
  * Generate a cryptographically random 16-byte salt
- * @returns 16-byte salt as Uint8Array
  */
 export function generateRandomSalt(): Uint8Array {
     return crypto.getRandomValues(new Uint8Array(16));
 }
 
 /**
- * Derive master keys (authKey + encryptionKey) from password and salt using PBKDF2
- *
- * @param password - User's master password
- * @param salt - Cryptographic salt (Uint8Array, 16 bytes)
- * @returns Object with authKey (32 bytes) and encryptionKey (32 bytes)
+ * Derive master keys (authKey + encryptionKey) from password and salt using PBKDF2.
  *
  * Security notes:
- * - authKey: Sent to backend as-is (backend hashes with bcrypt)
- * - encryptionKey: Never leaves browser, used to encrypt vault entries
- * - PBKDF2 iterations: 600000 for high security (frontend), 100000 acceptable (legacy login)
+ * - authKey:       Sent to backend — backend hashes with bcrypt before storing
+ * - encryptionKey: Never leaves the browser — used to AES-GCM encrypt vault entries
+ * - iterations:    100,000 — consistent for all users. Do not change without a
+ *                  migration plan; changing this invalidates all existing authKey hashes.
  */
 export async function deriveMasterKeys(
     password: string,
     salt: Uint8Array,
     iterations: number = 600000
 ): Promise<{ authKey: ArrayBuffer; encryptionKey: ArrayBuffer }> {
-    // Import the raw password as a PBKDF2 key material
     const rawKey = await crypto.subtle.importKey(
         "raw",
         new TextEncoder().encode(password),
@@ -64,7 +55,6 @@ export async function deriveMasterKeys(
         ["deriveBits"]
     );
 
-    // Derive 512 bits (64 bytes) using PBKDF2
     const bits = await crypto.subtle.deriveBits(
         {
             name: "PBKDF2",
@@ -77,21 +67,21 @@ export async function deriveMasterKeys(
     );
 
     return {
-        authKey: bits.slice(0, 32),    // First 32 bytes: sent to backend (hashed with bcrypt)
-        encryptionKey: bits.slice(32), // Last 32 bytes: used locally to encrypt vault entries
+        authKey: bits.slice(0, 32),    // first 32 bytes → sent to backend
+        encryptionKey: bits.slice(32), // last 32 bytes  → stays in browser
     };
 }
 
 /**
- * Derive encryption key only from password and salt (used for re-encryption)
- * @param password - User's master password
- * @param salt - Cryptographic salt (Uint8Array, 16 bytes)
- * @returns Encryption key (32 bytes)
+ * Derive only the encryptionKey from password and salt.
+ * Used during the backfill re-encryption path on first login after the
+ * salt migration, where we need the old email-based key to decrypt
+ * existing vault entries before re-encrypting with the new random-salt key.
  */
 export async function deriveEncryptionKeyOnly(
     password: string,
     salt: Uint8Array,
-    iterations: number = 600000
+    iterations: number = 100000
 ): Promise<ArrayBuffer> {
     const { encryptionKey } = await deriveMasterKeys(password, salt, iterations);
     return encryptionKey;

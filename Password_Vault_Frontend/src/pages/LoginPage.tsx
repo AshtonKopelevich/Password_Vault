@@ -2,9 +2,9 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
     bufferToHex,
-    hexToBuffer,
-    deriveMasterKeys,
     deriveEncryptionKeyOnly,
+    deriveMasterKeys,
+    hexToBuffer,
 } from "../utils/crypto";
 import "./sheets.css";
 
@@ -68,7 +68,7 @@ export default function LoginPage() {
                 // User logging in for first time after update: need to re-encrypt vault entries
                 // Derive old key using email-based salt for decryption
                 const emailBasedSalt = new TextEncoder().encode(email);
-                oldEncryptionKey = await deriveEncryptionKeyOnly(password, emailBasedSalt, 100000);
+                oldEncryptionKey = await deriveEncryptionKeyOnly(password, emailBasedSalt, 600000);
                 needsReencryption = true;
             }
 
