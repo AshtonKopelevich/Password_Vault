@@ -52,6 +52,14 @@ class User(Base):
         nullable=False
     )
 
+    # Cryptographically random 16-byte salt (stored as hex: 32 chars)
+    # Used for PBKDF2 key derivation on the frontend
+    # Generated during registration, retrieved during login
+    salt: Mapped[str] = mapped_column(
+        String(32),  # 16 bytes = 32 hex characters
+        nullable=True  # Allow NULL temporarily for backfill during migration
+    )
+
     # Timestamp fields
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

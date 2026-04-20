@@ -218,4 +218,7 @@ __pycache__/
 # Environment / Secrets
 .env
 
+#Repomix
+repomix-output.xml
+
 

@@ -87,6 +87,10 @@ def verify_session_token(token: str) -> int | None:
     # Constant-time comparison prevents timing attacks
     if not hmac.compare_digest(_sign(encoded), signature):
         return None
+    
+    # Reject if token has been explicitly revoked
+    if is_token_revoked(token):
+        return None
 
     payload = json.loads(base64.b64decode(encoded).decode())
 
@@ -94,3 +98,25 @@ def verify_session_token(token: str) -> int | None:
         return None
 
     return payload["user_id"]
+
+# ---------------------------------------------------------------------------
+# Token Denylist (in-memory — clears on server restart)
+# ---------------------------------------------------------------------------
+
+_revoked_tokens: set[str] = set()
+
+def revoke_token(token: str) -> None:
+    """Add a token signature to the denylist on logout."""
+    try:
+        _, signature = token.rsplit(".", 1)
+        _revoked_tokens.add(signature)
+    except ValueError:
+        pass
+
+def is_token_revoked(token: str) -> bool:
+    """Returns True if the token has been explicitly logged out."""
+    try:
+        _, signature = token.rsplit(".", 1)
+        return signature in _revoked_tokens
+    except ValueError:
+        return True
