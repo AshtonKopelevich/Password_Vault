@@ -55,6 +55,11 @@ function NewAccount() {
                     salt: bufferToHex(salt),  // NEW: send random salt to backend
                 }),
             });
+            // 1. Check for Rate Limiting (SlowAPI)
+            if (response.status === 429) {
+                setStatusMsg("Too many registeration attempts. Please wait 3 minutes before trying again.");
+                return;
+            }
 
             if (!response.ok) {
                 const data = await response.json();

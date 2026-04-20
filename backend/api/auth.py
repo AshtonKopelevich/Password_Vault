@@ -1,10 +1,14 @@
-from fastapi import FastAPI, HTTPException, status, Depends, Response, Cookie
+from fastapi import FastAPI, HTTPException, status, Depends, Response, Cookie, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_serializer, model_validator
 from sqlalchemy.orm import Session
 from typing import List
 from pydantic import BaseModel, Field
 import base64
+
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import hmac
 import hashlib
 
@@ -24,6 +28,11 @@ from backend.app.config import SESSION_SECRET
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+
+# 1. Initialize the limiter to use the user's IP address
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ---------------------------------------------------------------------------
 # CORS — allows the React dev server (localhost:3000) to talk to this API
@@ -152,6 +161,15 @@ def _fake_salt_for(email: str) -> str:
 def index():
     return {"message": "Password Vault API"}
 
+# username
+@app.get("/grab-username")
+def getUser(curr_user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
+    findUserName = db.query(DBUser).filter(DBUser.id == curr_user_id).first()
+    if not findUserName:
+        raise HTTPException(status_code=401, detail="Username not found")
+    else:
+        return {"message": "Username successfully retrieved", "username": findUserName.username}
+
 
 @app.get("/auth/get-salt")
 def get_user_salt(email: str, db: Session = Depends(get_db)):
@@ -173,7 +191,8 @@ def get_user_salt(email: str, db: Session = Depends(get_db)):
 
 
 @app.post("/auth/signup")
-def create_user(user_data: User, response: Response, db: Session = Depends(get_db)):
+@limiter.limit("3/minute")
+def create_user(request: Request, user_data: User, response: Response, db: Session = Depends(get_db)):
     existing = db.query(DBUser).filter(DBUser.email == user_data.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -214,10 +233,12 @@ def create_user(user_data: User, response: Response, db: Session = Depends(get_d
 
 
 @app.post("/auth/login")
-def verify_user(user: User, response: Response, db: Session = Depends(get_db)):
+@limiter.limit("5/minute") # 5 attempts/min
+def verify_user(request: Request, user: User, response: Response, db: Session = Depends(get_db)):
     user_temp = db.query(DBUser).filter(DBUser.email == user.email).first()
 
     if not user_temp or not verify_auth_key(user.hashed_password, user_temp.password):
+        print()
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     # Backfill: if user somehow has no salt, generate and store one now
