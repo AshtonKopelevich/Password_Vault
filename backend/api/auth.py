@@ -103,6 +103,16 @@ class VaultEntryResponse(BaseModel):
         from_attributes = True
 
 
+class ChangePasswordRequest(BaseModel):
+    current_hashed_password: str = Field(..., max_length=128)
+    new_hashed_password: str = Field(..., max_length=128)
+    new_salt: str = Field(..., max_length=32)
+
+
+class DeleteAccountRequest(BaseModel):
+    current_hashed_password: str = Field(..., max_length=128)
+
+
 # ---------------------------------------------------------------------------
 # DB dependency
 # ---------------------------------------------------------------------------
@@ -161,7 +171,7 @@ def _fake_salt_for(email: str) -> str:
 def index():
     return {"message": "Password Vault API"}
 
-# username
+
 @app.get("/grab-username")
 def getUser(curr_user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
     findUserName = db.query(DBUser).filter(DBUser.id == curr_user_id).first()
@@ -173,20 +183,9 @@ def getUser(curr_user_id: int = Depends(get_current_user_id), db: Session = Depe
 
 @app.get("/auth/get-salt")
 def get_user_salt(email: str, db: Session = Depends(get_db)):
-    """
-    Returns the PBKDF2 salt for a user's email.
-
-    Always returns a valid-looking 32-char hex salt regardless of whether
-    the email is registered, preventing user enumeration. Unknown emails
-    receive a deterministic fake salt derived from the email + SESSION_SECRET
-    via HMAC — consistent across calls but indistinguishable from a real salt.
-    """
     user = db.query(DBUser).filter(DBUser.email == email).first()
-
     if not user or not user.salt:
-        # Return a fake salt — same shape as real, unpredictable without SECRET
         return {"salt": _fake_salt_for(email)}
-
     return {"salt": user.salt}
 
 
@@ -196,6 +195,9 @@ def create_user(request: Request, user_data: User, response: Response, db: Sessi
     existing = db.query(DBUser).filter(DBUser.email == user_data.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
+    
+    if db.query(DBUser).filter(DBUser.username == user_data.username).first():
+        raise HTTPException(status_code=400, detail="Username already taken")
 
     if not user_data.salt:
         raise HTTPException(
@@ -225,15 +227,15 @@ def create_user(request: Request, user_data: User, response: Response, db: Sessi
         value=token,
         httponly=True,
         samesite="strict",
-        secure=False,   # set True in production (HTTPS)
-        max_age=28800,  # 8 hours
+        secure=False,
+        max_age=28800,
     )
 
     return {"message": "User created", "user_id": new_user.id}
 
 
 @app.post("/auth/login")
-@limiter.limit("5/minute") # 5 attempts/min
+@limiter.limit("5/minute")
 def verify_user(request: Request, user: User, response: Response, db: Session = Depends(get_db)):
     user_temp = db.query(DBUser).filter(DBUser.email == user.email).first()
 
@@ -241,7 +243,6 @@ def verify_user(request: Request, user: User, response: Response, db: Session = 
         print()
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    # Backfill: if user somehow has no salt, generate and store one now
     if not user_temp.salt:
         import secrets
         user_temp.salt = secrets.token_hex(16)
@@ -254,8 +255,8 @@ def verify_user(request: Request, user: User, response: Response, db: Session = 
         value=token,
         httponly=True,
         samesite="strict",
-        secure=False,   # set True in production (HTTPS)
-        max_age=28800,  # 8 hours
+        secure=False,
+        max_age=28800,
     )
 
     return {"message": "Login successful", "user_id": user_temp.id, "username": user_temp.username}
@@ -272,6 +273,68 @@ def logout(response: Response, session_id: str = Cookie(None)):
         secure=False,
     )
     return {"message": "Logged out successfully"}
+
+
+@app.put("/auth/change-password")
+@limiter.limit("5/minute")
+def change_password(
+    request: Request,
+    body: ChangePasswordRequest,
+    curr_user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    user = db.query(DBUser).filter(DBUser.id == curr_user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not verify_auth_key(body.current_hashed_password, user.password):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    if len(body.new_salt) != 32 or not all(c in "0123456789abcdefABCDEF" for c in body.new_salt):
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid salt format. Must be 32 hex characters (16 bytes).",
+        )
+
+    user.password = hash_auth_key(body.new_hashed_password)
+    user.salt = body.new_salt.lower()
+    db.commit()
+
+    return {"message": "Password updated successfully"}
+
+
+@app.delete("/auth/account")
+@limiter.limit("3/minute")
+def delete_account(
+    request: Request,
+    body: DeleteAccountRequest,
+    response: Response,
+    session_id: str = Cookie(None),
+    curr_user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    user = db.query(DBUser).filter(DBUser.id == curr_user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not verify_auth_key(body.current_hashed_password, user.password):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    # Cascade delete on the FK handles vault entries automatically
+    db.delete(user)
+    db.commit()
+
+    # Revoke session and clear cookie so the browser can't reuse it
+    if session_id:
+        revoke_token(session_id)
+    response.delete_cookie(
+        key="session_id",
+        httponly=True,
+        samesite="strict",
+        secure=False,
+    )
+
+    return {"message": "Account deleted"}
 
 
 # ---------------------------------------------------------------------------

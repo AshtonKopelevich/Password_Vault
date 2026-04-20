@@ -62,6 +62,7 @@ export default function LoginPage() {
             sessionStorage.setItem("encryptionKey", bufferToHex(encryptionKey));
             sessionStorage.setItem("userId", String(data.user_id));
             sessionStorage.setItem("username", data.username);
+            sessionStorage.setItem("email", email);
 
             if (isBackfillCase && oldEncryptionKey) {
                 try { await reEncryptVaultEntries(oldEncryptionKey, encryptionKey); }

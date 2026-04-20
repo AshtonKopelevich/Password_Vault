@@ -45,6 +45,7 @@ function NewAccount() {
             sessionStorage.setItem("encryptionKey", bufferToHex(encryptionKey));
             sessionStorage.setItem("userId", String(data.user_id));
             sessionStorage.setItem("username", username);
+            sessionStorage.setItem("email", email);
             setIsSuccess(true);
             setStatusMsg("Account created!");
             setTimeout(() => navigate("/UserMenu"), 800);
