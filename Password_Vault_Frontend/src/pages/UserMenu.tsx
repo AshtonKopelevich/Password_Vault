@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { passwordFormatErr, passwordFormatMsg, passwordMatchMsg } from "../App";
 import { bufferToHex, deriveMasterKeys, generateRandomSalt, hexToBuffer } from "../utils/crypto";
@@ -61,7 +61,7 @@ async function reEncryptAllEntries(
 
 function UserMenu() {
     const navigate = useNavigate();
-    const username = sessionStorage.getItem("username") ?? "user";
+    const [username, setUsername] = useState<string>("User");
 
     // Change password state
     const [currentPassword, setCurrentPassword] = useState("");
@@ -85,6 +85,29 @@ function UserMenu() {
         if (!encryptionKey || !userId || !email) { navigate("/"); return null; }
         return { encryptionKey, userId, email };
     }
+
+    // Gets username from auth.py
+    useEffect(() => {
+        const fetchUser = async () => {
+            try{
+                const response = await fetch("http://localhost:8000/grab-username",{
+                    method: "GET",
+                    credentials: "include",
+                });
+
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log("Full Backend Response:", data);
+                setUsername(data.username);
+                }
+            }
+            catch (error) {
+                const username = ""
+            }
+        };
+        fetchUser();
+    }, []);
 
     async function changePasswordSubmit(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault();
