@@ -3,7 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_serializer, model_validator
 from sqlalchemy.orm import Session
 from typing import List
+from pydantic import BaseModel, Field
 import base64
+import hmac
+import hashlib
 
 from backend.app.database import get_session, engine, Base
 from backend.models.user import User as DBUser
@@ -14,7 +17,9 @@ from backend.core.security import (
     validate_vault_entry,
     create_session_token,
     verify_session_token,
+    revoke_token, 
 )
+from backend.app.config import SESSION_SECRET
 
 Base.metadata.create_all(bind=engine)
 
@@ -41,10 +46,10 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 class User(BaseModel):
-    email: str
-    username: str
-    hashed_password: str  # PBKDF2-derived authKey from the frontend, NOT the raw password
-    salt: str = None  # Optional: frontend sends hex-encoded random salt during signup
+    email: str = Field(..., max_length=255)
+    username: str = Field(..., max_length=255)
+    hashed_password: str = Field(..., max_length=128)
+    salt: str = Field(None, max_length=32)
 
 
 class VaultEntryIn(BaseModel):
@@ -52,10 +57,10 @@ class VaultEntryIn(BaseModel):
     Accepts base64-encoded strings from the frontend and decodes them to bytes.
     The frontend sends JSON with base64 strings — not raw bytes.
     """
-    account: str
-    password: str   # base64 ciphertext
-    iv: str         # base64 IV
-    salt: str       # base64 salt
+    account: str = Field(..., max_length=255)
+    password: str = Field(..., max_length=255)   # base64 ciphertext
+    iv: str = Field(..., max_length=255)        # base64 IV
+    salt: str = Field(..., max_length=255)      # base64 salt
 
     def decode_fields(self):
         """Returns decoded bytes for password, iv, and salt."""
@@ -115,6 +120,31 @@ def get_current_user_id(session_id: str = Cookie(None)) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _fake_salt_for(email: str) -> str:
+    """
+    Derives a deterministic but unpredictable 32-char hex salt for an email
+    using HMAC-SHA256 keyed with SESSION_SECRET.
+
+    Properties:
+    - Same email always returns the same value (consistent)
+    - Without SESSION_SECRET an attacker cannot predict it (unpredictable)
+    - Indistinguishable from a real salt in length and format
+    - Does NOT reveal whether the email is registered
+
+    Used to prevent user enumeration via the /auth/get-salt endpoint.
+    """
+    digest = hmac.new(
+        SESSION_SECRET.encode(),
+        f"fake-salt:{email}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    return digest[:32]  # 32 hex chars = 16 bytes, matching real salt format
+
+
+# ---------------------------------------------------------------------------
 # Auth routes
 # ---------------------------------------------------------------------------
 
@@ -126,25 +156,18 @@ def index():
 @app.get("/auth/get-salt")
 def get_user_salt(email: str, db: Session = Depends(get_db)):
     """
-    Retrieve the cryptographic salt for a user's PBKDF2 key derivation.
+    Returns the PBKDF2 salt for a user's email.
 
-    Args:
-        email: User's email address
-
-    Returns:
-        Hex-encoded 32-character salt (16 bytes)
-
-    Security notes:
-        - Salt is not secret; it's meant to be unique per-user and prevent rainbow tables
-        - If user not found or salt is NULL, generate a random salt on first login
-        - This endpoint does NOT require authentication
+    Always returns a valid-looking 32-char hex salt regardless of whether
+    the email is registered, preventing user enumeration. Unknown emails
+    receive a deterministic fake salt derived from the email + SESSION_SECRET
+    via HMAC — consistent across calls but indistinguishable from a real salt.
     """
     user = db.query(DBUser).filter(DBUser.email == email).first()
 
     if not user or not user.salt:
-        # User not found or has no salt yet (backfill case)
-        # Return a zero salt; frontend will handle and trigger salt generation on login
-        return {"salt": "00" * 16}  # 32 hex chars = 16 bytes of zeros
+        # Return a fake salt — same shape as real, unpredictable without SECRET
+        return {"salt": _fake_salt_for(email)}
 
     return {"salt": user.salt}
 
@@ -155,24 +178,23 @@ def create_user(user_data: User, response: Response, db: Session = Depends(get_d
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    # Validate salt: must be 32 hex characters (16 bytes)
-    if user_data.salt:
-        if len(user_data.salt) != 32 or not all(c in "0123456789abcdefABCDEF" for c in user_data.salt):
-            raise HTTPException(
-                status_code=422,
-                detail="Invalid salt format. Must be 32 hex characters (16 bytes)."
-            )
-    else:
+    if not user_data.salt:
         raise HTTPException(
             status_code=422,
-            detail="Salt is required. Frontend must generate and send a random 16-byte salt."
+            detail="Salt is required. Frontend must generate and send a random 16-byte salt.",
+        )
+
+    if len(user_data.salt) != 32 or not all(c in "0123456789abcdefABCDEF" for c in user_data.salt):
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid salt format. Must be 32 hex characters (16 bytes).",
         )
 
     new_user = DBUser(
         email=user_data.email,
         username=user_data.username,
         password=hash_auth_key(user_data.hashed_password),
-        salt=user_data.salt.lower(),  # Store as lowercase hex
+        salt=user_data.salt.lower(),
     )
     db.add(new_user)
     db.commit()
@@ -183,9 +205,9 @@ def create_user(user_data: User, response: Response, db: Session = Depends(get_d
         key="session_id",
         value=token,
         httponly=True,
-        samesite="lax",
-        secure=False,
-        max_age=28800,
+        samesite="strict",
+        secure=False,   # set True in production (HTTPS)
+        max_age=28800,  # 8 hours
     )
 
     return {"message": "User created", "user_id": new_user.id}
@@ -198,12 +220,10 @@ def verify_user(user: User, response: Response, db: Session = Depends(get_db)):
     if not user_temp or not verify_auth_key(user.hashed_password, user_temp.password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    # Backfill: If user has no salt, generate and store one
+    # Backfill: if user somehow has no salt, generate and store one now
     if not user_temp.salt:
         import secrets
-        # Generate random 16-byte salt and convert to hex
-        random_salt = secrets.token_hex(16)  # 16 bytes = 32 hex chars
-        user_temp.salt = random_salt
+        user_temp.salt = secrets.token_hex(16)
         db.commit()
         db.refresh(user_temp)
 
@@ -212,20 +232,22 @@ def verify_user(user: User, response: Response, db: Session = Depends(get_db)):
         key="session_id",
         value=token,
         httponly=True,
-        samesite="lax",
-        secure=False,
-        max_age=28800,
+        samesite="strict",
+        secure=False,   # set True in production (HTTPS)
+        max_age=28800,  # 8 hours
     )
 
     return {"message": "Login successful", "user_id": user_temp.id, "username": user_temp.username}
 
 
 @app.post("/auth/logout")
-def logout(response: Response):
+def logout(response: Response, session_id: str = Cookie(None)):
+    if session_id:
+        revoke_token(session_id)
     response.delete_cookie(
         key="session_id",
         httponly=True,
-        samesite="lax",
+        samesite="strict",
         secure=False,
     )
     return {"message": "Logged out successfully"}
