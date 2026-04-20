@@ -58,7 +58,7 @@ export async function deriveMasterKeys(
     const bits = await crypto.subtle.deriveBits(
         {
             name: "PBKDF2",
-            salt: salt,
+            salt: salt.buffer as ArrayBuffer,
             iterations: iterations,
             hash: "SHA-256",
         },

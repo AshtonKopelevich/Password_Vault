@@ -73,6 +73,7 @@ function NewAccount() {
             // like LoginPage does so ProtectedRoute lets them through
             sessionStorage.setItem("encryptionKey", bufferToHex(encryptionKey));
             sessionStorage.setItem("userId", String(data.user_id));
+            sessionStorage.setItem("username", data.username);
 
             navigate("/UserMenu");
 

@@ -107,6 +107,7 @@ export default function LoginPage() {
             // encryptionKey stays in sessionStorage only — clears on tab close
             sessionStorage.setItem("encryptionKey", bufferToHex(encryptionKey));
             sessionStorage.setItem("userId", String(data.user_id));
+            sessionStorage.setItem("username", data.username);
 
             // Step 6: Handle vault re-encryption if this was a backfill case
             if (needsReencryption && oldEncryptionKey) {
