@@ -11,6 +11,10 @@ function bufferToBase64(buffer: ArrayBuffer): string {
     return btoa(String.fromCharCode(...new Uint8Array(buffer)));
 }
 
+const getUsername = () = {
+    return sessionStorage.getItem("username")
+}
+
 async function encryptPassword(plaintext: string, encryptionKeyHex: string) {
     const keyBytes = Uint8Array.from(
         encryptionKeyHex.match(/.{2}/g)!.map(b => parseInt(b, 16))
@@ -140,7 +144,7 @@ function UserMenu() {
             <header></header>
 
             <section>
-                <h1>Password Vault</h1>
+                <h1> Hi {getUsername()}! Welcome to Password Vault</h1>
                 <br />
 
                 {/* View Passwords */}
